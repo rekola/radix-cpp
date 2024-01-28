@@ -3,9 +3,11 @@
 
 #include <iterator>
 #include <cstddef>
+#include <cstdint>
 #include <utility>
 #include <vector>
 #include <limits>
+#include <functional>
 
 namespace radix_cpp {
   template <typename Key, typename T>
@@ -13,27 +15,45 @@ namespace radix_cpp {
   public:
     static constexpr bool is_map = !std::is_void<T>::value;
     static constexpr bool is_set = !is_map;
-    static constexpr size_t num_digits = sizeof(T);
+    static constexpr size_t key_size = sizeof(Key);
+    static constexpr size_t bucket_count = 256;
 
     using key_type = Key;
     using mapped_type = T;
-#if 1
     using value_type = typename std::conditional<is_set, Key, std::pair<Key, T>>::type;
-#else
-    using value_type = Key;
-#endif
     using size_type = size_t;
     using Self = Table<key_type, mapped_type>;
 
   private:
     struct Node {
-      bool is_assigned = false;
+      bool is_assigned = false, is_sentinel = false;
       value_type data;
+      size_t prefix_key = 0;
+    };
+
+    struct SubTable {
+      SubTable(size_t unordered_size) : unordered_size_(unordered_size) {
+	data_.resize(257);
+	data_.back().is_assigned = data_.back().is_sentinel = true;
+      }
+
+      struct Node & operator[](size_t i) {
+	return data_[i];
+      }
+
+      size_t size() const { return data_.size(); }
+      void resize(size_t new_size) { data_.resize(new_size); }
+
+      Node & back() { return data_.back(); }
+
+      size_t unordered_size_ = 0;
+      size_t num_entries_ = 0;
+      std::vector<struct Node> data_;
     };
 
   public:
 
-    struct Iterator 
+    struct Iterator
     {
       using iterator_category = std::forward_iterator_tag;
       using difference_type   = std::ptrdiff_t;
@@ -41,16 +61,33 @@ namespace radix_cpp {
       using pointer           = value_type*;
       using reference         = value_type&;
 
-      Iterator(Node * node) : node_(node) {
+      Iterator() { }
 
+      void addNode(Node * node) {
+	nodes_.push_back(node);
       }
 
-      reference operator*() const { return node_->data; }
-      pointer operator->() { return &(node_->data); }
+      reference operator*() const { return nodes_.back()->data; }
+      pointer operator->() { return &(nodes_.back()->data); }
       Iterator& operator++() {
-	do {
-	  node_++;
-	} while (!node_->is_assigned);
+	while ( !nodes_.empty() ) {
+	  size_t prefix = nodes_.back()->prefix_key;
+	  while ( 1 ) {
+	    nodes_.back()++;
+	    auto & node = nodes_.back();
+	    if (node->is_assigned) { // remove this
+	      return *this;
+	    } else if (!node->is_assigned) { // and this
+	      continue;
+	    } else if (!node->is_assigned || node->is_sentinel || node->prefix_key != prefix) {
+	      break;
+	    } else if (node->prefix_key == prefix) {
+	      // fill_nodes();
+	      return *this;
+	    }
+	  }
+	  nodes_.pop_back();
+	}
 	return *this;
       }
       Iterator operator++(int) {
@@ -59,50 +96,86 @@ namespace radix_cpp {
 	return tmp;
       }
       friend bool operator== (const Iterator& a, const Iterator& b) {
-	return a.node_ == b.node_;
+	size_t n = a.size();
+	if (n != b.size()) return false;
+	for (size_t i = 0; i < n; i++) if (a.nodes_[i] != b.nodes_[i]) return false;
+	return true;
       };
       friend bool operator!= (const Iterator& a, const Iterator& b) {
-	return a.node_ != b.node_;
+	size_t n = a.size();
+	if (n != b.size()) return true;
+	for (size_t i = 0; i < n; i++) if (a.nodes_[i] != b.nodes_[i]) return true;
+	return false;
       };
 
+      void fast_forward() {
+	while (!nodes_.front()->is_assigned) {
+	  nodes_.front()++;
+	}
+      }
+
     private:
-      Node * node_;
+      size_t size() const { return nodes_.size(); }
+
+      std::vector<Node *> nodes_;
     };
     
     typedef Iterator iterator;
     
     Table() {
-      data_.resize((size_t)std::numeric_limits<Key>::max() + 2);
-      data_.back().is_assigned = true;
+      clear();
     }
 
     void clear() {
       data_.clear();
+      for (size_t i = 0; i < key_size; i++) {
+	data_.emplace_back(i);
+      }
     }
 
     std::pair<iterator,bool> insert(const value_type& vt) {
-      auto & key = getFirstConst(vt);
-      auto & node = data_[key];
-      if (node.is_assigned) {
-	return std::make_pair(Iterator(&node), false);
-      } else {
-	node.data = vt;
-	node.is_assigned = true;
-	return std::make_pair(Iterator(&node), false);
+      size_t key0 = getFirstConst(vt);
+      Iterator it;
+      bool is_new = true;
+      for (size_t i = 0; i < key_size; i++) {
+	size_t key = (key0 >> ((key_size - 1 - i) * 8)) & 0xff;
+	size_t prefix_key = 0;
+	if (i > 0) {
+	  prefix_key = key0 >> ((key_size - i) * 8);
+	  key = (key + std::hash<uint64_t>{}(prefix_key)) % data_[i].size();
+	}
+	
+	auto & node = data_[i][key];
+	it.addNode(&node);
+	if (!node.is_assigned) {
+	  is_new = false;
+	  node.data = vt;
+	  node.is_assigned = true;
+	  node.prefix_key = prefix_key;
+	}
       }
+      return std::make_pair(std::move(it), is_new);
     }
 
     Iterator begin() {
+      Iterator it;
       for (size_t i = 0; i < data_.size(); i++) {
-	if (data_[i].is_assigned) return Iterator(&data_[i]);
+	it.addNode(&(data_[i][0]));
       }
-      return end();
+      it.fast_forward();
+      return it;
     }
-    Iterator end() { return Iterator(&(data_.back())); }
+    Iterator end() {
+      Iterator it;
+      for (size_t i = 0; i < data_.size(); i++) {
+	it.addNode(&(data_[i].back()));
+      }
+      return it;
+    }
 
   private:
-    // getFirstConst returns the key for either set or map
-    // This version is for sets
+    // getFirstConst returns the key from value_type for either set or map
+    // This version is for sets, where value_type == key_type
     key_type const& getFirstConst(key_type const& k) const noexcept {
       return k;
     }
@@ -113,7 +186,7 @@ namespace radix_cpp {
       return vt.first;
     }
 
-    std::vector<struct Node> data_;
+    std::vector<SubTable> data_;
   };
 
   template <typename Key>
