@@ -28,27 +28,7 @@ namespace radix_cpp {
     struct Node {
       bool is_assigned = false, is_sentinel = false;
       value_type data;
-      size_t prefix_key = 0;
-    };
-
-    struct SubTable {
-      SubTable(size_t unordered_size) : unordered_size_(unordered_size) {
-	data_.resize(257);
-	data_.back().is_assigned = data_.back().is_sentinel = true;
-      }
-
-      struct Node & operator[](size_t i) {
-	return data_[i];
-      }
-
-      size_t size() const { return data_.size(); }
-      void resize(size_t new_size) { data_.resize(new_size); }
-
-      Node & back() { return data_.back(); }
-
-      size_t unordered_size_ = 0;
-      size_t num_entries_ = 0;
-      std::vector<struct Node> data_;
+      size_t key = 0, prefix_key = 0;
     };
 
   public:
@@ -61,32 +41,32 @@ namespace radix_cpp {
       using pointer           = value_type*;
       using reference         = value_type&;
 
-      Iterator() { }
+      Iterator(Self * table) : table_(table) { }
 
-      void addNode(SubTable * subtable, size_t idx) {
-	subtables_.push_back(subtable);
+      void addNode(size_t idx) {
 	indices_.push_back(idx);
+	remaining_.push_back(bucket_count);
       }
 
       reference operator*() const {
-	auto & subtable = subtables_.back();
 	size_t idx = indices_.back();
-	return (*subtable)[idx].data;
+	return table_->data_[idx].data;
       }
       pointer operator->() {
-	auto & subtable = subtables_.back();
 	size_t idx = indices_.back();
-	return &((*subtable)[idx].data);
+	return &(table_->data_[idx].data);
       }
       Iterator& operator++() {
 	while ( !indices_.empty() ) {
-	  auto & subtable = subtables_.back();
 	  size_t idx = indices_.back();
-	  size_t prefix = (*subtable)[idx].prefix_key;
+	  size_t prefix = table_->data_[idx].prefix_key;
 	  while ( 1 ) {
 	    indices_.back()++;
-	    auto & node = (*subtable)[indices_.back()];
-	    if (node.is_assigned) { // remove this
+	    auto & node = table_->data_[indices_.back()];
+	    if (node.is_sentinel) { // remove this
+	      indices_.clear();
+	      return *this;
+	    } else if (node.is_assigned) { // remove this
 	      return *this;
 	    } else if (!node.is_assigned) { // and this
 	      continue;
@@ -120,10 +100,9 @@ namespace radix_cpp {
       };
 
       void fast_forward() {
-	SubTable * table = subtables_.back();
 	while ( 1 ) {
 	  size_t idx = indices_.back();
-	  auto node = (*table)[idx];
+	  auto node = table_->data_[idx];
 	  if (node.is_assigned) break;
 	  indices_.back()++;
 	}
@@ -132,8 +111,9 @@ namespace radix_cpp {
     private:
       size_t size() const { return indices_.size(); }
 
-      std::vector<SubTable *> subtables_;
+      Self * table_;
       std::vector<size_t> indices_;
+      std::vector<size_t> remaining_;
     };
     
     typedef Iterator iterator;
@@ -144,49 +124,50 @@ namespace radix_cpp {
 
     void clear() {
       data_.clear();
-      for (size_t i = 0; i < key_size; i++) {
-	data_.emplace_back(i);
-      }
+      data_.resize(257);
+      data_.back().is_assigned = data_.back().is_sentinel = true;
     }
 
     std::pair<iterator,bool> insert(const value_type& vt) {
       size_t key0 = getFirstConst(vt);
-      Iterator it;
+      Iterator it(this);
       bool is_new = true;
       for (size_t i = 0; i < key_size; i++) {
+	bool is_final = i + 1 == data_.size();
 	size_t key = (key0 >> ((key_size - 1 - i) * 8)) & 0xff;
 	size_t prefix_key = 0;
 	if (i > 0) {
 	  prefix_key = key0 >> ((key_size - i) * 8);
-	  key = (key + std::hash<uint64_t>{}(prefix_key)) % data_[i].size();
+	  key = (key + std::hash<uint64_t>{}(prefix_key)) % data_.size();
 	}
 	
-	it.addNode(&(data_[i]), key);
-	auto & node = data_[i][key];
+	it.addNode(key);
+	auto & node = data_[key];
+	if (node.is_assigned && node.prefix_key == prefix_key && node.key == key) {
+	  if (is_final) {
+	    is_new = false;
+	  }
+	}
 	if (!node.is_assigned) {
-	  is_new = false;
 	  node.data = vt;
 	  node.is_assigned = true;
 	  node.prefix_key = prefix_key;
+	  num_entries_++;
 	}
       }
       return std::make_pair(std::move(it), is_new);
     }
 
     Iterator begin() {
-      Iterator it;
-      for (size_t i = 0; i < data_.size(); i++) {
-	it.addNode(&(data_[i]), 0);
+      Iterator it(this);
+      for (size_t i = 0; i < key_size; i++) {
+	it.addNode(0);
       }
       it.fast_forward();
       return it;
     }
     Iterator end() {
-      Iterator it;
-      for (size_t i = 0; i < data_.size(); i++) {
-	it.addNode(&(data_[i]), data_[i].size() - 1);
-      }
-      return it;
+      return Iterator(this);
     }
 
   private:
@@ -202,7 +183,8 @@ namespace radix_cpp {
       return vt.first;
     }
 
-    std::vector<SubTable> data_;
+    size_t num_entries_ = 0;
+    std::vector<struct Node> data_;
   };
 
   template <typename Key>
