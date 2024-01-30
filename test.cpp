@@ -25,7 +25,7 @@ int main(void) {
   S2.insert(29999);
   S2.insert(30000);
   for (auto & v : S2) {
-    std::cout << (int)v << "\n";
+    std::cout << v << "\n";
   }
 
   std::cout << "S3\n";
@@ -41,8 +41,16 @@ int main(void) {
   S3.insert(10);
   S3.insert(1);
   for (auto & v : S3) {
-    std::cout << (int)v << "\n";
+    std::cout << v << "\n";
   }
+
+  radix_cpp::set<std::string> S4;
+  S4.insert("Hello World");
+  S4.insert("A");
+  S4.insert("B");
+  for (auto & v : S4) {
+    std::cout << v << "\n";
+  } 
 
   return 0;
 }
