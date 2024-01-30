@@ -137,7 +137,7 @@ namespace radix_cpp {
 	      
 	      auto & node0 = table_->data_[indices_start_.back() % table_->data_.size()];
 	      if (!node0.is_final) {
-		size_t start = (0 + std::hash<key_type>{}(node0.key)) % table_->data_.size();
+		size_t start = (0 + hash(node0.prefix_size, node0.key)) % table_->data_.size();
 		size_t range = bucket_count;
 		while ( range >= 1 ) {
 		  auto & node = table_->data_[start];
@@ -196,14 +196,15 @@ namespace radix_cpp {
       void fast_forward() {
 	while (1) {
 	  size_t start, range = bucket_count;
+	  size_t prefix_size = indices_start_.size();
 	  key_type prefix_key;
-	  if (indices_start_.empty()) {
+	  if (prefix_size == 0) {
 	    prefix_key = key_type();
 	    start = 0;
 	  } else {
 	    auto & prev_node = table_->data_[indices_start_.back()];
 	    prefix_key = prev_node.key;
-	    start = (0 + std::hash<key_type>{}(prefix_key)) % table_->data_.size();
+	    start = (0 + hash(prefix_size, prefix_key)) % table_->data_.size();
 	  }
 	  while (range >= 1) {
 	    auto & node = table_->data_[start];
@@ -211,7 +212,7 @@ namespace radix_cpp {
 	      start++;
 	      if (start >= table_->data_.size()) start -= table_->data_.size();
 	      range--;
-	    } else if (indices_start_.size() != node.prefix_size || node.prefix_key != prefix_key) {
+	    } else if (prefix_size != node.prefix_size || node.prefix_key != prefix_key) {
 	      start++;
 	      if (start >= table_->data_.size()) start -= table_->data_.size();
 	    } else {
@@ -277,8 +278,7 @@ namespace radix_cpp {
 	value_type data = vt;
 	
 	if (i > 0) {
-	  size_t h = std::hash<key_type>{}(prefix_key);
-	  start = (start + h) % data_.size();
+	  start = (start + hash(i, prefix_key)) % data_.size();
 	}
 #ifdef DEBUG
 	size_t orig_key = key;
@@ -356,10 +356,16 @@ namespace radix_cpp {
     getFirstConst(value_type const& vt) const noexcept {
       return vt.first;
     }
-    
+
     void resize(size_t new_size) {
       std::cerr << "resize not implemented\n";
       abort();
+    }
+
+    // hash function XORs the hash of the key size to the final hash,
+    // so that all the prefixes of 0 get a different hash
+    static size_t hash(size_t key_size, key_type key) {
+      return std::hash<size_t>{}(key_size) ^ std::hash<key_type>{}(key);
     }
 
     size_t num_entries_ = 0;
