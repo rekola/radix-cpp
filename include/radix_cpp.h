@@ -85,46 +85,47 @@ namespace radix_cpp {
 
       Iterator(Self * table) : table_(table) { }
 
-      void pushSubIterator(size_t start, size_t end) {
+      void pushSubIterator(size_t start, size_t range) {
 	indices_start_.push_back(start);
-	indices_end_.push_back(end);
+	indices_range_.push_back(range);
       }
 
       void popSubIterator() {
 	indices_start_.pop_back();
-	indices_end_.pop_back();
+	indices_range_.pop_back();
       }
 
       reference operator*() const {
-	size_t idx = indices_start_.back();
-	return table_->data_[idx].data;
+	return table_->data_[indices_start_.back()].data;
       }
       pointer operator->() {
-	size_t idx = indices_start_.back();
-	return &(table_->data_[idx].data);
+	return &(table_->data_[indices_start_.back()].data);
       }
       Iterator& operator++() {
 	while ( !indices_start_.empty() ) {
 	  auto & node00 = table_->data_[indices_start_.back() % table_->data_.size()];
 	  size_t prefix_size = node00.prefix_size;
 	  key_type prefix = node00.prefix_key;
-	  while ( indices_start_.back() != indices_end_.back() ) {
+	  while ( indices_range_.back() >= 2 ) {
 	    indices_start_.back()++;
 	    if (indices_start_.back() >= table_->data_.size()) indices_start_.back() -= table_->data_.size();
 	    
 	    auto & node = table_->data_[indices_start_.back() % table_->data_.size()];
 	    if (!node.is_assigned) {
-	      // unassigned
+	      indices_range_.back()--;
 	    } else if (node.prefix_size == prefix_size && node.prefix_key == prefix) {
+	      indices_range_.back()--;
+	      
 	      if (indices_start_.size() < key_size) {
 		auto & node0 = table_->data_[indices_start_.back() % table_->data_.size()];
 		size_t start = (0 + std::hash<key_type>{}(node0.key)) % table_->data_.size();
-		size_t end = (bucket_count + std::hash<key_type>{}(node0.key)) % table_->data_.size();
-		while ( start != end ) {
+		size_t range = bucket_count;
+		while ( range >= 1 ) {
 		  auto & node = table_->data_[start];
 		  if (!node.is_assigned) {
 		    start++;
 		    if (start >= table_->data_.size()) start -= table_->data_.size();
+		    range--;
 		  } else if (prefix_size + 1 != node.prefix_size || node.prefix_key != node0.key) {
 		    start++;
 		    if (start >= table_->data_.size()) start -= table_->data_.size();
@@ -132,18 +133,18 @@ namespace radix_cpp {
 		    break;
 		  }
 		}
-		if (start == end) {
+		if (!range) {
 		  std::cerr << "could not find next subiterator\n";
 		  abort();
 		}
-		pushSubIterator(start, end);
+		pushSubIterator(start, range);
 	      }
 
 #ifdef DEBUG
 	      std::cerr << "++:";
 	      for (size_t i = 0; i < indices_start_.size(); i++) {
 		size_t idx = indices_start_[i];
-		std::cerr << " " << indices_start_[i] << ":" << indices_end_[i] << " (prefix = " << table_->data_[idx].prefix_key << ", key = " << table_->data_[idx].key << ")";
+		std::cerr << " " << indices_start_[i] << ":" << indices_range_[i] << " (prefix = " << table_->data_[idx].prefix_key << ", key = " << table_->data_[idx].key << ")";
 	      }
 	      std::cerr << "\n";
 #endif
@@ -175,38 +176,39 @@ namespace radix_cpp {
 
       void fast_forward() {
 	for (size_t i = 0; i < key_size; i++) {
-	  size_t start, end;
+	  size_t start, range = bucket_count;
 	  key_type prefix_key;
 	  if (i == 0) {
 	    prefix_key = 0;
 	    start = 0;
-	    end = bucket_count % table_->data_.size();
 	  } else {
 	    auto & prev_node = table_->data_[indices_start_.back()];
 	    prefix_key = prev_node.key;
 	    start = (0 + std::hash<key_type>{}(prefix_key)) % table_->data_.size();
-	    end = (bucket_count + std::hash<key_type>{}(prefix_key)) % table_->data_.size();
 	  }
-	  while (start != end) {
+	  while (range >= 1) {
 	    auto & node = table_->data_[start];
 	    if (!node.is_assigned) {
 	      start++;
 	      if (start >= table_->data_.size()) start -= table_->data_.size();
+	      range--;
 	    } else if (i != node.prefix_size || node.prefix_key != prefix_key) {
 	      start++;
 	      if (start >= table_->data_.size()) start -= table_->data_.size();
 	    } else {
-#ifdef DEBUG
-	      std::cerr << "fast forward digit " << i << ": idx " << start << ":" << end << ", node (" << node.prefix_size << ", " << node.prefix_key << ")\n";
-#endif
 	      break;
 	    }
 	  }
 
-	  if (start != end) {
-	    std::cerr << "fast forward: found iterator " << start << ":" << end << " for prefix " << prefix_key << "\n";
-	    indices_start_.push_back(start);
-	    indices_end_.push_back(end);
+	  if (range) {
+	    auto & node = table_->data_[start];
+	    if (node.prefix_key != prefix_key) {
+	      abort();
+	    }
+#ifdef DEBUG
+	    std::cerr << "fast forward: found iterator " << start << ":" << range << " for prefix " << prefix_key << " with key " << node.key << "\n";
+#endif
+	    pushSubIterator(start, range);
 	  } else {
 	    std::cerr << "fast forward: could not find next subiterator for prefix " << prefix_key << "\n";
 	    abort();
@@ -215,11 +217,10 @@ namespace radix_cpp {
 	}
       }
 
-      std::vector<size_t> indices_start_, indices_end_;
-
-    private:
       size_t size() const { return indices_start_.size(); }
 
+    private:
+      std::vector<size_t> indices_start_, indices_range_;
       Self * table_;
     };
     
@@ -239,29 +240,58 @@ namespace radix_cpp {
       if (10 * num_entries_ / data_.size() >= 7) {
 	resize(data_.size() * 2);
       }
-      
+
       key_type key0 = getFirstConst(vt);
       Iterator it(this);
       bool is_new = true;
+
+#ifdef DEBUG
+      std::cerr << "inserting " << key0 << "\n";
+#endif
+      
       for (size_t i = 0; i < key_size; i++) {
 	bool is_final = i + 1 == key_size;
 	key_type prefix_key = prefix(key0, i);
 	key_type key = prefix(key0, i + 1);
 	size_t start = top(key);
-	size_t end = 0;
+	size_t range = bucket_count - start;
+	value_type data = vt;
+	
 	if (i > 0) {
 	  size_t h = std::hash<key_type>{}(prefix_key);
 	  start = (start + h) % data_.size();
-	  end = (bucket_count + h) % data_.size();
 	}
+#ifdef DEBUG
+	size_t orig_key = key;
+#endif
 	while ( 1 ) {
 	  auto & node = data_[start];
-	  if (node.is_assigned && !(node.prefix_key == prefix_key && node.key == key)) {
-	    // collision
-	    start++;
-	    if (start >= data_.size()) start -= data_.size();
+	  if (node.is_assigned) {
+	    if (node.prefix_size == i && node.prefix_key == prefix_key) {
+	      if (node.key == key) {
+		// already inserted
+	      } else {
+		// collision with a friend
+		std::swap(node.data, data);
+		std::swap(node.key, key);
+		start++;
+		if (start >= data_.size()) start -= data_.size();
+		range--;
+		continue;
+	      }
+	    } else {
+	      // collision
+	      start++;
+	      if (start >= data_.size()) start -= data_.size();
+	      continue;
+	    }
 	  }
-	  it.pushSubIterator(start, end);
+	  if (it.size() == i) {
+#ifdef DEBUG
+	    std::cerr << "  start = " << start << ", range = " << range << ", prefix = " << prefix_key << ", key = " << orig_key << "\n";
+#endif
+	    it.pushSubIterator(start, range);
+	  }
 	  if (!node.is_assigned) {
 	    num_entries_++;
 	  } else if (is_final) {
