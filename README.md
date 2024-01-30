@@ -10,13 +10,22 @@ lead to large number of collisions. In this implementation the key is
 divided into multiple 8-bit digits, and each digit is ordered
 seperately while preserving the ordering of the previous stages.
 
+### Time complexity
+
+| Operation | Average |
+| - | - |
+| Search | Θ(w) |
+| Insert | Θ(w) |
+
+* w is the key length
+
 ## Implementation
 
 When inserting an element, the most significant digit is first mapped
 to the beginning of the hash table.
 
-Currently this implementation only works with unsigned integers, but
-more support is forthcoming.
+Currently this implementation only works with strings and unsigned
+integers, but more support is forthcoming.
 
 ## Extending types
 
@@ -26,6 +35,8 @@ To implement set and map for custom type, the following free functions must be d
 | - | - |
 | key_type prefix(key_type key, size_t n) | Returns the prefix of n digits of the key |
 | size_t top(key_type key) | Returns the numeric value of the least significant digit of the key |
+| size_t size(key_type key) | Returns the number of digits in the key |
+| | A hash function for key_type in std |
 
 ## Missing functionality
 
