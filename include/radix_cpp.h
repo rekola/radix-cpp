@@ -11,6 +11,46 @@
 #include <iostream>
 
 namespace radix_cpp {
+  static inline uint8_t prefix(uint8_t key, size_t n_digits) {
+    return n_digits == 0 ? 0 : key;
+  }
+
+  static inline uint16_t prefix(uint16_t key, size_t n_digits) {
+    return n_digits == 0 ? 0 : n_digits >= sizeof(key) ? key : (key >> ((sizeof(key) - n_digits) * 8));
+  }
+
+  static inline uint32_t prefix(uint32_t key, size_t n_digits) {
+    return n_digits == 0 ? 0 : n_digits >= sizeof(key) ? key : (key >> ((sizeof(key) - n_digits) * 8));
+  }
+
+  static inline uint64_t prefix(uint64_t key, size_t n_digits) {
+    return n_digits == 0 ? 0 : n_digits >= sizeof(key) ? key : (key >> ((sizeof(key) - n_digits) * 8));
+  }
+
+  static inline std::string prefix(std::string key, size_t n_digits) {
+    return n_digits >= key.size() ? key : key.substr(0, n_digits);
+  }
+
+  static inline size_t top(uint8_t key) {
+    return key;
+  }
+
+  static inline size_t top(uint16_t key) {
+    return key & 0xff;
+  }
+
+  static inline size_t top(uint32_t key) {
+    return key & 0xff;
+  }
+
+  static inline size_t top(uint64_t key) {
+    return key & 0xff;
+  }
+
+  static inline size_t top(std::string key) {
+    return key.empty() ? 0 : static_cast<unsigned char>(key.back());
+  }
+
   template <typename Key, typename T>
   class Table {
   public:
@@ -29,7 +69,8 @@ namespace radix_cpp {
     struct Node {
       bool is_assigned = false;
       value_type data;
-      size_t key = 0, prefix_key = 0, prefix_size = 0;
+      key_type key = 0, prefix_key = 0;
+      size_t prefix_size = 0;
     };
 
   public:
@@ -55,18 +96,18 @@ namespace radix_cpp {
       }
 
       reference operator*() const {
-	size_t idx = indices_start_.back() % table_->data_.size();
+	size_t idx = indices_start_.back();
 	return table_->data_[idx].data;
       }
       pointer operator->() {
-	size_t idx = indices_start_.back() % table_->data_.size();
+	size_t idx = indices_start_.back();
 	return &(table_->data_[idx].data);
       }
       Iterator& operator++() {
 	while ( !indices_start_.empty() ) {
 	  auto & node00 = table_->data_[indices_start_.back() % table_->data_.size()];
 	  size_t prefix_size = node00.prefix_size;
-	  size_t prefix = node00.prefix_key;
+	  key_type prefix = node00.prefix_key;
 	  while ( indices_start_.back() != indices_end_.back() ) {
 	    indices_start_.back()++;
 	    if (indices_start_.back() >= table_->data_.size()) indices_start_.back() -= table_->data_.size();
@@ -77,8 +118,8 @@ namespace radix_cpp {
 	    } else if (node.prefix_size == prefix_size && node.prefix_key == prefix) {
 	      if (indices_start_.size() < key_size) {
 		auto & node0 = table_->data_[indices_start_.back() % table_->data_.size()];
-		size_t start = (0 + std::hash<uint64_t>{}(node0.key)) % table_->data_.size();
-		size_t end = (bucket_count + std::hash<uint64_t>{}(node0.key)) % table_->data_.size();
+		size_t start = (0 + std::hash<key_type>{}(node0.key)) % table_->data_.size();
+		size_t end = (bucket_count + std::hash<key_type>{}(node0.key)) % table_->data_.size();
 		while ( start != end ) {
 		  auto & node = table_->data_[start];
 		  if (!node.is_assigned) {
@@ -101,7 +142,7 @@ namespace radix_cpp {
 #ifdef DEBUG
 	      std::cerr << "++:";
 	      for (size_t i = 0; i < indices_start_.size(); i++) {
-		size_t idx = indices_start_[i] % table_->data_.size();
+		size_t idx = indices_start_[i];
 		std::cerr << " " << indices_start_[i] << ":" << indices_end_[i] << " (prefix = " << table_->data_[idx].prefix_key << ", key = " << table_->data_[idx].key << ")";
 	      }
 	      std::cerr << "\n";
@@ -134,7 +175,8 @@ namespace radix_cpp {
 
       void fast_forward() {
 	for (size_t i = 0; i < key_size; i++) {
-	  size_t start, end, prefix_key;
+	  size_t start, end;
+	  key_type prefix_key;
 	  if (i == 0) {
 	    prefix_key = 0;
 	    start = 0;
@@ -142,8 +184,8 @@ namespace radix_cpp {
 	  } else {
 	    auto & prev_node = table_->data_[indices_start_.back()];
 	    prefix_key = prev_node.key;
-	    start = (0 + std::hash<uint64_t>{}(prefix_key)) % table_->data_.size();
-	    end = (bucket_count + std::hash<uint64_t>{}(prefix_key)) % table_->data_.size();
+	    start = (0 + std::hash<key_type>{}(prefix_key)) % table_->data_.size();
+	    end = (bucket_count + std::hash<key_type>{}(prefix_key)) % table_->data_.size();
 	  }
 	  while (start != end) {
 	    auto & node = table_->data_[start];
@@ -193,24 +235,23 @@ namespace radix_cpp {
     }
 
     std::pair<iterator,bool> insert(const value_type& vt) {
-      size_t key0 = getFirstConst(vt);
+      key_type key0 = getFirstConst(vt);
       Iterator it(this);
       bool is_new = true;
       for (size_t i = 0; i < key_size; i++) {
-	bool is_final = i + 1 == data_.size();
-	size_t key = key0 >> ((key_size - 1 - i) * 8);
-	size_t start = key & 0xff;
+	bool is_final = i + 1 == key_size;
+	key_type prefix_key = prefix(key0, i);
+	key_type key = prefix(key0, i + 1);
+	size_t start = top(key);
 	size_t end = 0;
-	size_t prefix_key = 0;
 	if (i > 0) {
-	  prefix_key = key0 >> ((key_size - i) * 8);
-	  size_t h = std::hash<uint64_t>{}(prefix_key);
+	  size_t h = std::hash<key_type>{}(prefix_key);
 	  start = (start + h) % data_.size();
 	  end = (bucket_count + h) % data_.size();
 	}
 	while ( 1 ) {
 	  auto & node = data_[start];
-	  if (node.is_assigned && !(node.prefix_key == prefix_key && node.key == key)){
+	  if (node.is_assigned && !(node.prefix_key == prefix_key && node.key == key)) {
 	    // collision
 	    start++;
 	    if (start >= data_.size()) start -= data_.size();
