@@ -122,20 +122,20 @@ namespace radix_cpp {
       }
       Iterator& operator++() {
 	while ( !indices_start_.empty() ) {
-	  auto & node00 = table_->data_[indices_start_.back() % table_->data_.size()];
+	  auto & node00 = table_->data_[indices_start_.back()];
 	  size_t prefix_size = node00.prefix_size;
 	  key_type prefix = node00.prefix_key;
 	  while ( indices_range_.back() >= 2 ) {
 	    indices_start_.back()++;
 	    if (indices_start_.back() >= table_->data_.size()) indices_start_.back() -= table_->data_.size();
 	    
-	    auto & node = table_->data_[indices_start_.back() % table_->data_.size()];
+	    auto & node = table_->data_[indices_start_.back()];
 	    if (!node.is_assigned) {
 	      indices_range_.back()--;
 	    } else if (node.prefix_size == prefix_size && node.prefix_key == prefix) {
 	      indices_range_.back()--;
 	      
-	      auto & node0 = table_->data_[indices_start_.back() % table_->data_.size()];
+	      auto & node0 = table_->data_[indices_start_.back()];
 	      if (!node0.is_final) {
 		size_t start = (0 + hash(node0.prefix_size, node0.key)) % table_->data_.size();
 		size_t range = bucket_count;
