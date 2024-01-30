@@ -235,6 +235,11 @@ namespace radix_cpp {
     }
 
     std::pair<iterator,bool> insert(const value_type& vt) {
+      // Check the load factor
+      if (10 * num_entries_ / data_.size() >= 7) {
+	resize(data_.size() * 2);
+      }
+      
       key_type key0 = getFirstConst(vt);
       Iterator it(this);
       bool is_new = true;
@@ -300,6 +305,11 @@ namespace radix_cpp {
     typename std::enable_if<!std::is_void<Q>::value, key_type const&>::type
     getFirstConst(value_type const& vt) const noexcept {
       return vt.first;
+    }
+    
+    void resize(size_t new_size) {
+      std::cerr << "resize not implemented\n";
+      abort();
     }
 
     size_t num_entries_ = 0;
