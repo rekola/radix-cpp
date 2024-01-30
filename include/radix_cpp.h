@@ -27,7 +27,7 @@ namespace radix_cpp {
     return n_digits == 0 ? 0 : n_digits >= sizeof(key) ? key : (key >> ((sizeof(key) - n_digits) * 8));
   }
 
-  static inline std::string prefix(std::string key, size_t n_digits) {
+  static inline std::string prefix(const std::string & key, size_t n_digits) {
     return n_digits >= key.size() ? key : key.substr(0, n_digits);
   }
 
@@ -47,7 +47,7 @@ namespace radix_cpp {
     return key & 0xff;
   }
 
-  static inline size_t top(std::string key) {
+  static inline size_t top(const std::string & key) {
     return key.empty() ? 0 : static_cast<unsigned char>(key.back());
   }
 
@@ -67,7 +67,7 @@ namespace radix_cpp {
     return sizeof(key);
   }
 
-  static inline size_t size(std::string key) {
+  static inline size_t size(const std::string & key) {
     return key.size();
   }
 
