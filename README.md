@@ -23,6 +23,7 @@ more support is forthcoming.
 To implement set and map for custom type, the following free functions must be defined:
 
 | Function | Description |
+| - | - |
 | key_type prefix(key_type key, size_t n) | Returns the prefix of n digits of the key |
 | size_t top(key_type key) | Returns the numeric value of the least significant digit of the key |
 
