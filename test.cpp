@@ -18,11 +18,31 @@ int main(void) {
     std::cout << (int)key << " = " << value << "\n";
   }
 
+  std::cout << "S2\n";
   radix_cpp::set<uint16_t> S2;
   S2.insert(1000);
   S2.insert(1001);
-  S2.insert(1);
+  S2.insert(29999);
   S2.insert(30000);
-  
+  for (auto & v : S2) {
+    std::cout << (int)v << "\n";
+  }
+
+  std::cout << "S3\n";
+  radix_cpp::set<uint32_t> S3;
+  S3.insert(1000000000);
+  S3.insert(100000000);
+  S3.insert(10000000);
+  S3.insert(1000000);
+  S3.insert(100000);
+  S3.insert(10000);
+  S3.insert(1000);
+  S3.insert(100);
+  S3.insert(10);
+  S3.insert(1);
+  for (auto & v : S3) {
+    std::cout << (int)v << "\n";
+  }
+
   return 0;
 }
