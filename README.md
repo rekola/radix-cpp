@@ -2,8 +2,8 @@
 
 ## Radix set and map implementation.
 
-radix-cpp is an experimental implementation of ordered set and map. It
-provides very fast insert and lookup by using a hash table to
+radix-cpp is an experimental flat implementation of ordered set and
+map. It provides very fast insert and lookup by using a hash table to
 implement a radix sort. Ordinarily hash tables are not ordered, and
 while in theory, an order preserving hash function could be used, it
 would lead to large number of collisions. In this implementation the
@@ -65,7 +65,7 @@ To implement set and map for custom type, the following free functions must be d
 | - | - |
 | key_type prefix(key_type key, size_t n) | Returns the prefix of n digits of the key |
 | size_t top(key_type key) | Returns the numeric value of the least significant digit of the key |
-| size_t size(key_type key) | Returns the number of digits in the key |
+| size_t keysize(key_type key) | Returns the number of digits in the key |
 | | A hash function for key_type in std |
 
 ## Missing functionality

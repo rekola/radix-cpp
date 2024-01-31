@@ -51,23 +51,23 @@ namespace radix_cpp {
     return key.empty() ? 0 : static_cast<unsigned char>(key.back());
   }
 
-  static inline size_t size(uint8_t key) noexcept {
+  static inline size_t keysize(uint8_t key) noexcept {
     return sizeof(key);
   }
 
-  static inline size_t size(uint16_t key) noexcept {
+  static inline size_t keysize(uint16_t key) noexcept {
     return sizeof(key);
   }
 
-  static inline size_t size(uint32_t key) noexcept {
+  static inline size_t keysize(uint32_t key) noexcept {
     return sizeof(key);
   }
 
-  static inline size_t size(uint64_t key) noexcept {
+  static inline size_t keysize(uint64_t key) noexcept {
     return sizeof(key);
   }
 
-  static inline size_t size(const std::string & key) noexcept {
+  static inline size_t keysize(const std::string & key) noexcept {
     return key.size();
   }
 
@@ -144,11 +144,11 @@ namespace radix_cpp {
 		  auto & node = table_->data_[start];
 		  if (!node.is_assigned) {
 		    start++;
-		    if (start >= table_->data_.size()) start -= table_->data_.size();
+		    if (start == table_->data_.size()) start = 0;
 		    range--;
 		  } else if (prefix_size + 2 != node.depth || node.prefix_key != node0.key) {
 		    start++;
-		    if (start >= table_->data_.size()) start -= table_->data_.size();
+		    if (start == table_->data_.size()) start = 0;
 		  } else {
 		    break;
 		  }
@@ -204,11 +204,11 @@ namespace radix_cpp {
 	    auto & node = table_->data_[start];
 	    if (!node.is_assigned) {
 	      start++;
-	      if (start >= table_->data_.size()) start -= table_->data_.size();
+	      if (start == table_->data_.size()) start = 0;
 	      range--;
 	    } else if (depth_ != node.depth || node.prefix_key != prefix_key) {
 	      start++;
-	      if (start >= table_->data_.size()) start -= table_->data_.size();
+	      if (start == table_->data_.size()) start = 0;
 	    } else {
 	      break;
 	    }
@@ -277,9 +277,9 @@ namespace radix_cpp {
     
     using iterator = Iterator<false>;
     using const_iterator = Iterator<true>;
-    
-    Table() {
-      clear();
+
+    Table(size_t initial_size = 512) { // an arbitrary initial size
+      data_.resize(initial_size);
     }
 
     void clear() {
@@ -288,7 +288,7 @@ namespace radix_cpp {
     }
 
     iterator find(const key_type & key) {
-      size_t n = size(key);
+      size_t n = keysize(key);
       size_t prefix_size = n - 1;
       key_type prefix_key = prefix(key, prefix_size);
       size_t start = top(key);
@@ -323,12 +323,13 @@ namespace radix_cpp {
       key_type key0 = getFirstConst(vt);
       iterator it(this);
       bool is_new = true;
+      size_t collisions = 0;
 
 #ifdef DEBUG
       std::cerr << "inserting " << key0 << "\n";
 #endif
       
-      for (size_t i = 0, n = size(key0); i < n; i++) {
+      for (size_t i = 0, n = keysize(key0); i < n; i++) {
 	bool is_final = i + 1 == n;
 	key_type prefix_key = prefix(key0, i);
 	key_type key = prefix(key0, i + 1);
@@ -347,24 +348,27 @@ namespace radix_cpp {
 	  auto & node = data_[start];
 	  if (node.is_assigned) {
 	    if (node.depth == i + 1 && node.prefix_key == prefix_key) {
-	      if (node.key == key) {
-		// already inserted
-	      } else {
+	      if (node.key != key) {
 		// collision with a friend
 		std::swap(node.data, data);
 		std::swap(node.key, key);
+		std::swap(node.is_final, is_final);
 		it.set_indices(i + 1, start, range);
 		is_assigned = true;
-
+		collisions++;
+		
 		start++;
 		if (start >= data_.size()) start -= data_.size();
 		range--;
 		continue;
+	      } else if (is_final) {
+		is_new = false; // already inserted
 	      }
 	    } else {
 	      // collision
 	      start++;
 	      if (start >= data_.size()) start -= data_.size();
+	      collisions++;
 	      continue;
 	    }
 	  }
@@ -388,6 +392,8 @@ namespace radix_cpp {
 	  break;
 	}
       }
+      std::cerr << "insert collisions = " << collisions << "\n";
+      if (is_new) num_final_entries_++;
       return std::make_pair(std::move(it), is_new);
     }
 
@@ -412,6 +418,8 @@ namespace radix_cpp {
       return iterator(this);
     }
 
+    size_t size() const { return num_final_entries_; }
+    
   private:
     // getFirstConst returns the key from value_type for either set or map
     // This version is for sets, where value_type == key_type
@@ -426,8 +434,14 @@ namespace radix_cpp {
     }
 
     void resize(size_t new_size) {
-      std::cerr << "resize not implemented\n";
-      abort();
+      std::cerr << "resizing table to " << new_size << "\n";
+      Self new_table(new_size);
+      for (auto & node : data_) {
+	if (node.is_assigned) {
+	  new_table.insert(node.data);
+	}
+      }
+      swap(data_, new_table.data_);
     }
 
     // hash function XORs the hash of the key size to the final hash,
@@ -436,7 +450,7 @@ namespace radix_cpp {
       return std::hash<size_t>{}(key_size) ^ std::hash<key_type>{}(key);
     }
 
-    size_t num_entries_ = 0;
+    size_t num_entries_ = 0, num_final_entries_ = 0;
     std::vector<struct Node> data_;
   };
 
