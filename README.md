@@ -47,15 +47,15 @@ Deletion is not yet implemented.
 
 ## Iteration
 
-An iterator has two variables: the start index (the node that the
-iterator points to) and the range. The range tells us how many nodes
-are still remaining in the ordered range that is currently
-visiting. While the range is positive, we know that there are still
-nodes available in the ordered range, and when advancing to the next
-stored value, we can check them all in order. When the range runs out,
-we fall back to the previous digit and advance that one. If the new
-node is not a final node (leaf node), we go upwards in the tree and
-find the smallest leaf node.
+An iterator has three variables: the depth (in the prefix tree), the
+start index (the node that the iterator points to) and the range. The
+range tells us how many nodes are still remaining in the ordered range
+that is currently visiting. While the range is positive, we know that
+there are still nodes available in the ordered range, and when
+advancing to the next stored value, we can check them all in
+order. When the range runs out, we fall back to the previous digit and
+advance that one. If the new node is not a final node (leaf node), we
+go upwards in the tree and find the smallest leaf node.
 
 ## Extending types
 
