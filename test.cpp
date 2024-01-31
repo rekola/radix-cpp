@@ -46,11 +46,15 @@ int main(void) {
 
   radix_cpp::set<std::string> S4;
   S4.insert("Hello World");
+  S4.insert("c");
+  S4.insert("b");
+  S4.insert("a");
   S4.insert("A");
   S4.insert("B");
+  S4.insert("Z");
   for (auto & v : S4) {
     std::cout << v << "\n";
-  } 
-
+  }
+  
   return 0;
 }
