@@ -103,11 +103,11 @@ namespace radix_cpp {
       using reference	      = typename std::conditional<IsConst, value_type const&, value_type&>::type;
       using pointer = typename std::conditional<IsConst, value_type const*, value_type*>::type;
       
-      Iterator(Self * table) : table_(table) { }
+      Iterator(Self * table) noexcept : table_(table) { }
 
-      size_t depth() const { return depth_; }
+      size_t depth() const noexcept { return depth_; }
       
-      void set_indices(size_t depth, size_t start, size_t range) {
+      void set_indices(size_t depth, size_t start, size_t range) noexcept {
 	depth_ = depth;
 	start_ = start;
 	range_ = range;
@@ -415,12 +415,12 @@ namespace radix_cpp {
       it.fast_forward();
       return it;
     }
-    iterator end() {
+    iterator end() noexcept {
       // iterator is by default and end iterator (the depth is zero)
       return iterator(this);
     }
 
-    size_t size() const { return num_final_entries_; }
+    size_t size() const noexcept { return num_final_entries_; }
     
   private:
     // getFirstConst returns the key from value_type for either set or map
@@ -448,7 +448,7 @@ namespace radix_cpp {
 
     // hash function XORs the hash of the key size to the final hash,
     // so that all the prefixes of 0 get a different hash
-    static size_t hash(size_t key_size, key_type unordered_key, size_t ordered_key) {
+    static size_t hash(size_t key_size, key_type unordered_key, size_t ordered_key) noexcept {
       return ordered_key + (std::hash<size_t>{}(key_size) ^ std::hash<key_type>{}(unordered_key));
     }
 
