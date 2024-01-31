@@ -11,63 +11,63 @@
 #include <iostream>
 
 namespace radix_cpp {
-  static inline uint8_t prefix(uint8_t key, size_t n_digits) {
+  static inline uint8_t prefix(uint8_t key, size_t n_digits) noexcept {
     return n_digits == 0 ? 0 : key;
   }
 
-  static inline uint16_t prefix(uint16_t key, size_t n_digits) {
+  static inline uint16_t prefix(uint16_t key, size_t n_digits) noexcept {
     return n_digits == 0 ? 0 : n_digits >= sizeof(key) ? key : (key >> ((sizeof(key) - n_digits) * 8));
   }
 
-  static inline uint32_t prefix(uint32_t key, size_t n_digits) {
+  static inline uint32_t prefix(uint32_t key, size_t n_digits) noexcept {
     return n_digits == 0 ? 0 : n_digits >= sizeof(key) ? key : (key >> ((sizeof(key) - n_digits) * 8));
   }
 
-  static inline uint64_t prefix(uint64_t key, size_t n_digits) {
+  static inline uint64_t prefix(uint64_t key, size_t n_digits) noexcept {
     return n_digits == 0 ? 0 : n_digits >= sizeof(key) ? key : (key >> ((sizeof(key) - n_digits) * 8));
   }
 
-  static inline std::string prefix(const std::string & key, size_t n_digits) {
+  static inline std::string prefix(const std::string & key, size_t n_digits) noexcept {
     return n_digits >= key.size() ? key : key.substr(0, n_digits);
   }
 
-  static inline size_t top(uint8_t key) {
+  static inline size_t top(uint8_t key) noexcept {
     return key;
   }
 
-  static inline size_t top(uint16_t key) {
+  static inline size_t top(uint16_t key) noexcept {
     return key & 0xff;
   }
 
-  static inline size_t top(uint32_t key) {
+  static inline size_t top(uint32_t key) noexcept {
     return key & 0xff;
   }
 
-  static inline size_t top(uint64_t key) {
+  static inline size_t top(uint64_t key) noexcept {
     return key & 0xff;
   }
 
-  static inline size_t top(const std::string & key) {
+  static inline size_t top(const std::string & key) noexcept {
     return key.empty() ? 0 : static_cast<unsigned char>(key.back());
   }
 
-  static inline size_t size(uint8_t key) {
+  static inline size_t size(uint8_t key) noexcept {
     return sizeof(key);
   }
 
-  static inline size_t size(uint16_t key) {
+  static inline size_t size(uint16_t key) noexcept {
     return sizeof(key);
   }
 
-  static inline size_t size(uint32_t key) {
+  static inline size_t size(uint32_t key) noexcept {
     return sizeof(key);
   }
 
-  static inline size_t size(uint64_t key) {
+  static inline size_t size(uint64_t key) noexcept {
     return sizeof(key);
   }
 
-  static inline size_t size(const std::string & key) {
+  static inline size_t size(const std::string & key) noexcept {
     return key.size();
   }
 
@@ -236,7 +236,7 @@ namespace radix_cpp {
 	}
 	auto & node = table_->data_[start_];
 	if (!node.is_assigned) {
-	  std::cerr << "error\n";
+	  std::cerr << "error, node not assigned\n";
 	  abort();
 	}
 	size_t prefix_size = depth_ - 1;
@@ -279,9 +279,36 @@ namespace radix_cpp {
 
     void clear() {
       data_.clear();
-      data_.resize(512);
+      data_.resize(512); // an arbitrary initial size
     }
 
+    iterator find(const key_type & key) {
+      size_t n = size(key);
+      size_t prefix_size = n - 1;
+      key_type prefix_key = prefix(key, prefix_size);
+      size_t start = top(key);
+      size_t range = bucket_count - start;
+      if (prefix_size > 0) {
+	start = (start + hash(prefix_size, prefix_key)) % data_.size();
+      }
+      Iterator it(this);
+      while ( 1 ) {
+	auto & node = data_[start];
+	if (!node.is_assigned) {
+	  break; // not found
+	} else if (node.prefix_size != prefix_size || node.prefix_key != prefix_key) {
+	  // collision
+	  start++;
+	} else if (node.is_final && node.key == key) {
+	  it.set_indices(n, start, range);
+	  break;
+	} else {
+	  break; // not final / wrong key
+	}
+      }
+      return it;
+    }
+    
     std::pair<iterator,bool> insert(const value_type& vt) {
       // Check the load factor
       if (10 * num_entries_ / data_.size() >= 7) {
