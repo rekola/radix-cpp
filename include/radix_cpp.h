@@ -138,7 +138,7 @@ namespace radix_cpp {
 	      auto & node0 = table_->data_[start];
 	      if (!node0.is_final) {
 		depth++;
-		start = (0 + hash(node0.depth - 1, node0.key)) % table_->data_.size();
+		start = hash(node0.depth - 1, node0.key, 0) % table_->data_.size();
 		range = bucket_count;
 		while ( range >= 1 ) {
 		  auto & node = table_->data_[start];
@@ -198,7 +198,7 @@ namespace radix_cpp {
 	  } else {
 	    auto & prev_node = table_->data_[start_];
 	    prefix_key = prev_node.key;
-	    start = (0 + hash(prefix_size, prefix_key)) % table_->data_.size();
+	    start = hash(prefix_size, prefix_key, 0) % table_->data_.size();
 	  }
 	  while (range >= 1) {
 	    auto & node = table_->data_[start];
@@ -253,7 +253,7 @@ namespace radix_cpp {
 	start_ = top(new_key);
 	range_ = bucket_count - start_;
 	if (prefix_size) {
-	  start_ = (start_ + hash(prefix_size, new_prefix_key)) % table_->data_.size();
+	  start_ = hash(prefix_size, new_prefix_key, start_) % table_->data_.size();
 	}
 	while ( 1 ) {
 	  auto & node = table_->data_[start_];
@@ -294,7 +294,7 @@ namespace radix_cpp {
       size_t start = top(key);
       size_t range = bucket_count - start;
       if (prefix_size > 0) {
-	start = (start + hash(prefix_size, prefix_key)) % data_.size();
+	start = hash(prefix_size, prefix_key, start) % data_.size();
       }
       iterator it(this);
       while ( 1 ) {
@@ -339,7 +339,7 @@ namespace radix_cpp {
 	bool is_assigned = false;
 	
 	if (i > 0) {
-	  start = (start + hash(i, prefix_key)) % data_.size();
+	  start = hash(i, prefix_key, start) % data_.size();
 	}
 #ifdef DEBUG
 	size_t orig_key = key;
@@ -392,7 +392,9 @@ namespace radix_cpp {
 	  break;
 	}
       }
+#if 0
       std::cerr << "insert collisions = " << collisions << "\n";
+#endif
       if (is_new) num_final_entries_++;
       return std::make_pair(std::move(it), is_new);
     }
@@ -446,8 +448,8 @@ namespace radix_cpp {
 
     // hash function XORs the hash of the key size to the final hash,
     // so that all the prefixes of 0 get a different hash
-    static size_t hash(size_t key_size, key_type key) {
-      return std::hash<size_t>{}(key_size) ^ std::hash<key_type>{}(key);
+    static size_t hash(size_t key_size, key_type unordered_key, size_t ordered_key) {
+      return ordered_key + (std::hash<size_t>{}(key_size) ^ std::hash<key_type>{}(unordered_key));
     }
 
     size_t num_entries_ = 0, num_final_entries_ = 0;
