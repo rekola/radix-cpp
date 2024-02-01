@@ -9,6 +9,7 @@
 #include <limits>
 #include <functional>
 #include <iostream>
+#include <cstring>
 
 // #define DEBUG
 
@@ -97,10 +98,10 @@ namespace radix_cpp {
 
   private:
     struct Node {
-      bool is_assigned = false, is_final = false, has_children = false;
+      bool is_assigned, is_final, has_children;
       value_type data;
       key_type prefix_key;
-      size_t depth = 0;
+      size_t depth;
     };
 
   public:
@@ -294,13 +295,22 @@ namespace radix_cpp {
     using iterator = Iterator<false>;
     using const_iterator = Iterator<true>;
 
-    Table(size_t initial_size = 512) { // an arbitrary initial size
-      data_.resize(initial_size);
+    Table() { }
+
+    ~Table() {
+      for (size_t i = 0; i < data_size_; i++) {
+	auto & node = data_[i];
+	if (node.is_assigned) {
+	  node.data.~value_type();
+	  node.prefix_key.~key_type();
+	}
+      }
+      std::free(data_);
     }
 
     void clear() {
-      data_.clear();
-      data_.resize(512); // an arbitrary initial size
+      std::free(data_);
+      data_ = NULL;
     }
 
     iterator find(const key_type & key) {
@@ -329,8 +339,10 @@ namespace radix_cpp {
 
     std::pair<iterator,bool> insert(const value_type& vt) {
       // Check the load factor
-      if (10 * num_entries_ / data_.size() >= 5) {
-	resize(data_.size() * 2);
+      if (!data_) {
+	init(512); // arbitrary initial size
+      } else if (10 * num_entries_ / data_size_ >= 5) {
+	resize(data_size_ * 2);
       }
 
       key_type key0 = getFirstConst(vt);
@@ -348,11 +360,7 @@ namespace radix_cpp {
 	key_type key = prefix(key0, i + 1);
 	size_t start = top(key);
 	size_t offset = 0;
-	value_type data = vt;
-	
-#ifdef DEBUG
-	key_type orig_key = key;
-#endif
+
 	while ( 1 ) {
 	  auto & node = read_node(i + 1, prefix_key, start, offset);
 	  if (node.is_assigned) {
@@ -378,27 +386,30 @@ namespace radix_cpp {
 	    it.set_indices(i + 1, prefix_key, start, offset);
 	  }
 	  if (!node.is_assigned) {
+	    new (static_cast<void*>(&(node.data))) value_type();
+	    new (static_cast<void*>(&(node.prefix_key))) key_type();
+	    node.is_assigned = true;
+	    node.is_final = node.has_children = false;
+	    node.prefix_key = prefix_key;
+	    node.depth = i + 1;
 	    num_entries_++;
 	  } else if (is_final) {
 	    is_new = false;
 	  }
-	  node.is_assigned = true;
 	  if (is_final) {
 	    node.is_final = true;
-	    node.data = data;
+	    node.data = vt;
 	  } else {
 	    node.has_children = true;
 	    if (!node.is_final) {
 	      node.data = mk_value_from_key(key);
 	    }
 	  }
-	  node.prefix_key = prefix_key;
-	  node.depth = i + 1;
 	  break;
 	}
       }
 #if 0
-      std::cerr << "insert collisions = " << collisions << ", keysize = " << keysize(key0) << ", table = " << num_entries_ << "/" << data_.size() << "\n";
+      std::cerr << "insert collisions = " << collisions << ", keysize = " << keysize(key0) << ", table = " << num_entries_ << "/" << data_size_ << "\n";
 #endif
       if (is_new) num_final_entries_++;
       return std::make_pair(std::move(it), is_new);
@@ -450,19 +461,27 @@ namespace radix_cpp {
       return std::make_pair(k, mapped_type());
     }
 
+    void init(size_t s) {
+      if (data_) std::free(data_);
+      data_ = reinterpret_cast<Node*>(std::malloc(s * sizeof(Node)));
+      data_size_ = s;
+      for (size_t i = 0; i < data_size_; i++) data_[i].is_assigned = false;
+    }
     void resize(size_t new_size) {
-      // std::cerr << "resizing table to " << new_size << "\n";
-      Self new_table(new_size);
-      for (auto & node : data_) {
+      Self new_table;
+      new_table.init(new_size);
+      for (size_t i = 0; i < data_size_; i++) {
+	Node & node = data_[i];
 	if (node.is_assigned && node.is_final) {
 	  new_table.insert(node.data);
 	}
       }
-      swap(data_, new_table.data_);
+      std::swap(data_, new_table.data_);
+      std::swap(data_size_, new_table.data_size_);
     }
 
     Node & read_node(size_t depth, const key_type & unordered_key, size_t ordered_key, size_t offset) {
-      return data_[(calc_hash(depth, unordered_key, ordered_key) + offset) % data_.size()];
+      return data_[(calc_hash(depth, unordered_key, ordered_key) + offset) % data_size_];
     }
 
     static inline size_t hash_combine(size_t seed, size_t hash) noexcept {
@@ -476,11 +495,12 @@ namespace radix_cpp {
     static size_t calc_hash(size_t depth, const key_type & unordered_key, size_t ordered_key) noexcept {
       return hash_combine(hash_combine(murmur3_hash(std::hash<key_type>{}(unordered_key)),
 				       murmur3_hash(depth)),
-			  murmur3_hash(std::hash<uint64_t>{}(ordered_key)));
+			  murmur3_hash(ordered_key));
     }
 
     size_t num_entries_ = 0, num_final_entries_ = 0;
-    std::vector<struct Node> data_;
+    size_t data_size_ = 0;
+    Node* data_ = NULL;
   };
 
   template <typename Key>
