@@ -1,6 +1,7 @@
 # radix-cpp
 
 [![CI](https://github.com/rekola/radix-cpp/workflows/Ubuntu-CI/badge.svg)]()
+[![VS17-CI](https://github.com/rekola/radix-cpp/workflows/VS17-CI/badge.svg)]()
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
 
 ## Radix set and map implementation for C++
