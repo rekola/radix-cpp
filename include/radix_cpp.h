@@ -343,7 +343,7 @@ namespace radix_cpp {
     std::pair<iterator,bool> insert(const value_type& vt) {
       // Check the load factor
       if (!data_) {
-	init(512); // arbitrary initial size
+	init(bucket_count);
       } else if (10 * num_entries_ / data_size_ >= 5) {
 	resize(data_size_ * 2);
       }
@@ -464,6 +464,7 @@ namespace radix_cpp {
       return std::make_pair(k, mapped_type());
     }
 
+    // size must be a power of two
     void init(size_t s) {
       if (data_) std::free(data_);
       data_ = reinterpret_cast<Node*>(std::malloc(s * sizeof(Node)));
@@ -484,7 +485,7 @@ namespace radix_cpp {
     }
 
     Node & read_node(uint32_t depth, const key_type & unordered_key, size_t ordered_key, size_t offset) {
-      return data_[(calc_hash(depth, unordered_key, ordered_key) + offset) % data_size_];
+      return data_[(calc_hash(depth, unordered_key, ordered_key) + offset) & (data_size_ - 1)];
     }
 
     static inline size_t hash_combine(size_t seed, size_t hash) noexcept {
