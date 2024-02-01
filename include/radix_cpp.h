@@ -143,10 +143,12 @@ namespace radix_cpp {
       }
 
       reference operator*() const {
-	return table_->read_node(depth_, unordered_key_, start_, offset_).data;
+	size_t h = calc_hash(depth_, unordered_key_, start_);
+	return table_->read_node(h, offset_).data;
       }
       pointer operator->() {
-	return &(table_->read_node(depth_, unordered_key_, start_, offset_).data);
+	size_t h = calc_hash(depth_, unordered_key_, start_);
+	return &(table_->read_node(h, offset_).data);
       }
       Iterator& operator++() {
 	if (table_size_ != table_->data_size_) {
@@ -154,8 +156,10 @@ namespace radix_cpp {
 	  
 	  table_size_ = table_->data_size_;
 	  offset_ = 0;
+	  size_t h = calc_hash(depth_, unordered_key_, start_);
+
 	  while ( 1 ) {
-	    auto & node = table_->read_node(depth_, unordered_key_, start_, offset_);
+	    auto & node = table_->read_node(h, offset_);
 	    if (node.flags & RADIXCPP_FLAG_IS_ASSIGNED &&
 		node.depth == depth_ && node.prefix_key == unordered_key_ &&
 		top(getFirstConst(node.data)) == start_) {
@@ -174,7 +178,8 @@ namespace radix_cpp {
 	  if (!is_first) {
 	    start++;
 	  } else {
-	    auto & node = table_->read_node(depth, prefix, start, offset);
+	    size_t h = calc_hash(depth, prefix, start);
+	    auto & node = table_->read_node(h, offset);
 	    if (node.flags & RADIXCPP_FLAG_IS_FINAL && node.flags & RADIXCPP_FLAG_HAS_CHILDREN) {
 	      depth++;
 	      prefix = getFirstConst(node.data);
@@ -184,13 +189,15 @@ namespace radix_cpp {
 	    }
 	    is_first = false;
 	  }
-	  
+
+	  size_t h = calc_hash(depth, prefix, start);
 	  bool found = false;
 	  while ( start < bucket_count ) {
-	    auto & node = table_->read_node(depth, prefix, start, offset);
+	    auto & node = table_->read_node(h, offset);
 	    if (!node.flags) {
 	      start++;
 	      offset = 0;
+	      h = calc_hash(depth, prefix, start);
 	      continue;
 	    } else if (node.depth != depth || node.prefix_key != prefix || top(getFirstConst(node.data)) != start) {
 	      offset++;
@@ -203,6 +210,7 @@ namespace radix_cpp {
 	      depth++;
 	      prefix = getFirstConst(node.data);
 	      start = offset = 0;
+	      h = calc_hash(depth, prefix, start);
 	    }
 	  }
 
@@ -236,20 +244,16 @@ namespace radix_cpp {
       }
 
       void fast_forward() {
+	auto prefix_key = key_type();
 	while (1) {
-	  key_type prefix_key;
-	  if (depth_ == 0) {
-	    prefix_key = key_type();
-	  } else {
-	    auto & prev_node = table_->read_node(depth_, unordered_key_, start_, offset_);
-	    prefix_key = getFirstConst(prev_node.data);
-	  }
 	  size_t start = 0, offset = 0;
+	  size_t h = calc_hash(depth_ + 1, prefix_key, start);
 	  while (start < bucket_count) {
-	    auto & node = table_->read_node(depth_ + 1, prefix_key, start, offset);
+	    auto & node = table_->read_node(h, offset);
 	    if (!node.flags) {
 	      start++;
 	      offset = 0;
+	      h = calc_hash(depth_ + 1, prefix_key, start);
 	    } else if (depth_ + 1 != node.depth || node.prefix_key != prefix_key) {
 	      offset++;
 	    } else {
@@ -257,7 +261,7 @@ namespace radix_cpp {
 	    }
 	  }
 	  if (start < bucket_count) {
-	    auto & node = table_->read_node(depth_ + 1, prefix_key, start, offset);
+	    auto & node = table_->read_node(h, offset);
 	    if (node.prefix_key != prefix_key) {
 	      abort();
 	    }
@@ -266,6 +270,7 @@ namespace radix_cpp {
 	    std::cerr << "ff: node key = " << getFirstConst(node.data) << ", depth = " << depth_ << ", prefix_key = " << unordered_key_ << ", start = " << start_ << ", offset = " << offset_ << "\n";
 #endif
 	    if (node.flags & RADIXCPP_FLAG_IS_FINAL) break;
+	    prefix_key = getFirstConst(node.data);
 	  } else {
 	    std::cerr << "fast forward: could not find next subiterator for prefix " << prefix_key << "\n";
 	    abort();
@@ -280,7 +285,8 @@ namespace radix_cpp {
 	  start_ = offset_ = depth_ = 0;
 	  return;
 	}
-	auto & node = table_->read_node(depth_, unordered_key_, start_, offset_);
+	size_t h = calc_hash(depth_, unordered_key_, start_);
+	auto & node = table_->read_node(h, offset_);
 	if (!node.flags) {
 	  std::cerr << "error, node not assigned\n";
 	  abort();
@@ -294,14 +300,16 @@ namespace radix_cpp {
 	key_type new_prefix_key = prefix(node.prefix_key, keysize(new_key) - 1); // A Hack
 	size_t start = top(new_key);
 	size_t offset = 0;
+	h = calc_hash(depth, new_prefix_key, start);
 #ifdef DEBUG
 	std::cerr << "down(): depth = " << depth_ << ", start = " << start_ << ", offset = " << offset_ << ", key = " << getFirstConst(node.data) << ", prefix = " << node.prefix_key << ", new key = " << new_key << ", new prefix = " << new_prefix_key << ", start = " << start << "\n";
 #endif
 	while ( start < bucket_count ) {
-	  auto & node = table_->read_node(depth, new_prefix_key, start, offset);
+	  auto & node = table_->read_node(h, offset);
 	  if (!node.flags) {
 	    start++;
 	    offset = 0;
+	    h = calc_hash(depth, new_prefix_key, start);
 	  } else if (node.depth != depth || getFirstConst(node.data) != new_key) {
 	    offset++;
 	  } else {
@@ -312,7 +320,7 @@ namespace radix_cpp {
 	  std::cerr << "down failed\n";
 	  abort();
 	}
-	auto & node2 = table_->read_node(depth, new_prefix_key, start, offset);
+	auto & node2 = table_->read_node(h, offset);
 	if (getFirstConst(node2.data) != node.prefix_key) {
 	  std::cerr << "wrong node 2\n";
 	  abort();
@@ -334,6 +342,26 @@ namespace radix_cpp {
     using const_iterator = Iterator<true>;
 
     Table() { }
+    Table(Table && other) noexcept
+      : num_entries_(std::exchange(other.num_entries_, 0)),
+	num_final_entries_(std::exchange(other.num_final_entries_, 0)),
+	num_inserts_(std::exchange(other.num_inserts_, 0)),
+	num_insert_collisions_(std::exchange(other.num_insert_collisions_, 0)),
+	data_size_(std::exchange(other.data_size_, 0)),
+	data_(std::exchange(other.data, NULL)) { }
+
+    Table & operator=(Table && other) noexcept {
+      std::swap(num_entries_, other.num_entries);
+      std::swap(num_final_entries_, other.num_final_entries_);
+      std::swap(num_inserts_, other.num_inserts_);
+      std::swap(num_insert_collisions_, other.num_insert_collisons_);
+      std::swap(data_size_, other.data_size_);
+      std::swap(data_, other.data_);
+      return *this;
+    }
+    
+    Table(const Table & other) = delete;
+    Table& operator=(const Table & other) = delete;
 
     ~Table() {
       for (size_t i = 0; i < data_size_; i++) {
@@ -348,6 +376,7 @@ namespace radix_cpp {
 
     void clear() {
       std::free(data_);
+      num_entries_ = num_final_entries_ = num_inserts_ = num_insert_collisions_ = data_size_ = 0;
       data_ = NULL;
     }
 
@@ -355,8 +384,10 @@ namespace radix_cpp {
       uint32_t depth = static_cast<uint32_t>(keysize(key));
       key_type prefix_key = prefix(key, depth - 1);
       size_t start = top(key), offset = 0;
+      size_t h = calc_hash(depth, prefix_key, start);
+
       while ( 1 ) {
-	auto & node = read_node(depth, prefix_key, start, offset);
+	auto & node = read_node(h, offset);
 	if (!node.flags) {
 	  break; // not found
 	} else if (node.depth != depth || node.prefix_key != prefix_key || top(getFirstConst(node.data)) != start) {
@@ -379,7 +410,7 @@ namespace radix_cpp {
       }
 
       auto & key0 = getFirstConst(vt);
-      key_type prefix_key = prefix(key0, 0);
+      auto prefix_key = key_type();
       
 #ifdef DEBUG
       std::cerr << "inserting " << key0 << "\n";
@@ -532,10 +563,6 @@ namespace radix_cpp {
 
     Node & read_node(size_t h, size_t offset) {
       return data_[(h + offset) & (data_size_ - 1)];
-    }
-
-    Node & read_node(uint32_t depth, const key_type & unordered_key, size_t ordered_key, size_t offset) {
-      return read_node(calc_hash(depth, unordered_key, ordered_key), offset);
     }
 
     static inline size_t hash_combine(size_t seed, size_t hash) noexcept {
