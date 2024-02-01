@@ -92,7 +92,7 @@ namespace radix_cpp {
   public:
     static constexpr bool is_map = !std::is_void<T>::value;
     static constexpr bool is_set = !is_map;
-    static constexpr size_t bucket_count = 256;
+    static constexpr size_t bucket_count = 256; // bucket count for the ordered portion of the key
 
     using key_type = Key;
     using mapped_type = T;
@@ -119,6 +119,12 @@ namespace radix_cpp {
       using pointer           = typename std::conditional<IsConst, value_type const*, value_type*>::type;
       
       Iterator(Self * table) noexcept : table_(table) { }
+      Iterator(Self * table, uint32_t depth, key_type unordered_key, size_t start, size_t offset) noexcept
+	: table_(table),
+	  start_(start),
+	  offset_(offset),
+	  unordered_key_(std::move(unordered_key)),
+	  depth_(depth) { }
       
       void set_indices(uint32_t depth, key_type unordered_key, size_t start, size_t offset) noexcept {
 	depth_ = depth;
@@ -322,7 +328,6 @@ namespace radix_cpp {
       uint32_t depth = static_cast<uint32_t>(keysize(key));
       key_type prefix_key = prefix(key, depth - 1);
       size_t start = top(key), offset = 0;
-      iterator it(this);
       while ( 1 ) {
 	auto & node = read_node(depth, prefix_key, start, offset);
 	if (!node.flags) {
@@ -331,13 +336,12 @@ namespace radix_cpp {
 	  // collision
 	  offset++;
 	} else if (node.flags & RADIXCPP_FLAG_IS_FINAL && getFirstConst(node.data) == key) {
-	  it.set_indices(depth, prefix_key, start, offset);
-	  break;
+	  return iterator(this, depth, prefix_key, start, offset);
 	} else {
 	  break; // not final / wrong key
 	}
       }
-      return it;
+      return end();
     }
 
     std::pair<iterator,bool> insert(const value_type& vt) {
@@ -349,8 +353,6 @@ namespace radix_cpp {
       }
 
       key_type key0 = getFirstConst(vt);
-      iterator it(this);
-      bool is_new = true;
       size_t collisions = 0;
 
 #ifdef DEBUG
@@ -373,8 +375,8 @@ namespace radix_cpp {
 		collisions++;
 		offset++;
 		continue;
-	      } else if (is_final) {
-		is_new = false; // already inserted
+	      } else {
+		// already inserted
 	      }
 	    } else {
 	      // collision
@@ -386,36 +388,33 @@ namespace radix_cpp {
 #ifdef DEBUG
 	  std::cerr << "  key = " << key << ", start = " << start << ", offset = " << offset << ", prefix = " << prefix_key << "\n";
 #endif
-	  if (is_final) {
-	    it.set_indices(depth, prefix_key, start, offset);
-	  }
+	  bool is_new = true;
 	  if (!node.flags) {
-	    new (static_cast<void*>(&(node.data))) value_type();
-	    new (static_cast<void*>(&(node.prefix_key))) key_type();
+	    if (is_final) {
+	      new (static_cast<void*>(&(node.data))) value_type(vt);
+	    } else {
+	      new (static_cast<void*>(&(node.data))) value_type(mk_value_from_key(key));
+	    }
+	    new (static_cast<void*>(&(node.prefix_key))) key_type(std::move(prefix_key));
 	    node.flags = RADIXCPP_FLAG_IS_ASSIGNED;
-	    node.prefix_key = prefix_key;
 	    node.depth = depth;
 	    num_entries_++;
 	  } else if (is_final) {
 	    is_new = false;
+	    node.data = vt; // update data
 	  }
+	  node.flags |= is_final ? RADIXCPP_FLAG_IS_FINAL : RADIXCPP_FLAG_HAS_CHILDREN;
 	  if (is_final) {
-	    node.flags |= RADIXCPP_FLAG_IS_FINAL;
-	    node.data = vt;
+	    if (is_new) num_final_entries_++;
+	    return std::make_pair(iterator(this, depth, prefix_key, start, offset), is_new);
 	  } else {
-	    node.flags |= RADIXCPP_FLAG_HAS_CHILDREN;
-	    if (!(node.flags & RADIXCPP_FLAG_IS_FINAL)) {
-	      node.data = mk_value_from_key(key);
-	    }
+	    break;
 	  }
-	  break;
 	}
       }
-#if 0
-      std::cerr << "insert collisions = " << collisions << ", keysize = " << keysize(key0) << ", table = " << num_entries_ << "/" << data_size_ << "\n";
-#endif
-      if (is_new) num_final_entries_++;
-      return std::make_pair(std::move(it), is_new);
+
+      // error
+      return std::make_pair(end(), false);
     }
 
     template <typename Q = mapped_type>
@@ -476,8 +475,19 @@ namespace radix_cpp {
       new_table.init(new_size);
       for (size_t i = 0; i < data_size_; i++) {
 	Node & node = data_[i];
-	if (node.flags & RADIXCPP_FLAG_IS_FINAL) {
-	  new_table.insert(node.data);
+	if (node.flags & RADIXCPP_FLAG_IS_ASSIGNED) {
+	  size_t start = top(getFirstConst(node.data));
+	  size_t offset = 0;
+	  size_t h = calc_hash(node.depth, node.prefix_key, start);
+	  while ( 1 ) {
+	    Node & output_node = new_table.data_[(h + offset) & (new_size - 1)];
+	    if (output_node.flags) {
+	      offset++;
+	    } else {
+	      std::swap(node, output_node);
+	      break;
+	    }
+	  }
 	}
       }
       std::swap(data_, new_table.data_);
