@@ -13,17 +13,17 @@ seperately while preserving the ordering of the previous stages.
 Currently this implementation only works with strings and unsigned
 integers, but more support is forthcoming.
 
-### Time complexity
+### Time Complexity
 
-| Operation | Average |
-| - | - |
-| Search | Θ(1) |
-| Insert | Θ(w) |
+| Operation | Average | Worst Case |
+| - | - | - |
+| Search | Θ(1) | O(n) |
+| Insert | Θ(w) | O(w*n) |
 
 * w is the key length
 
 Iterating over nodes in order can be somewhat expensive if the next
-node has different prefix. And it's unclear what the complexity of
+node has different prefix. Also, it's unclear what the complexity of
 Next operation is.
 
 ## Implementation
@@ -45,7 +45,7 @@ inside the hash table.
 
 Deletion is not yet implemented.
 
-## Iteration
+### Iteration
 
 An iterator has three variables: the depth (in the prefix tree), the
 start index (the node that the iterator points to) and the range. The
@@ -57,6 +57,12 @@ order. When the range runs out, we fall back to the previous digit and
 advance that one. If the new node is not a final node (leaf node), we
 go upwards in the tree and find the smallest leaf node.
 
+### Limitations
+
+- Maximum key length is 2^32
+- Deletion is not yet implemented
+- No signed types
+
 ## Extending types
 
 To implement set and map for custom type, the following free functions must be defined:
@@ -67,8 +73,3 @@ To implement set and map for custom type, the following free functions must be d
 | size_t top(key_type key) | Returns the numeric value of the least significant digit of the key |
 | size_t keysize(key_type key) | Returns the number of digits in the key |
 | | A hash function for key_type in std |
-
-## Missing functionality
-
-- Deletion
-- Signed types
