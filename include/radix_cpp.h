@@ -97,7 +97,7 @@ namespace radix_cpp {
 
   private:
     struct Node {
-      bool is_assigned = false, is_final = false;
+      bool is_assigned = false, is_final = false, has_children = false;
       value_type data;
       key_type prefix_key;
       size_t depth = 0;
@@ -130,6 +130,7 @@ namespace radix_cpp {
 	return &(table_->read_node(depth_, unordered_key_, start_, offset_).data);
       }
       Iterator& operator++() {
+	bool is_first = true;
 	while ( depth_ > 0 ) {
 	  key_type prefix = unordered_key_;
 	  size_t depth = depth_, start = start_, offset = offset_;
@@ -138,9 +139,17 @@ namespace radix_cpp {
 	    abort();
 	  }
 	  // std::cerr << "++ start, prefix = " << prefix << ", key = " << getFirstConst(tmp.data) << ", depth = " << depth << ", start = " << start << ", range = " << range << "\n";
-	  start++;
-	  offset = 0;
 
+	  if (is_first && node00.is_final && node00.has_children) {
+	    depth++;
+	    prefix = getFirstConst(node00.data);
+	    start = offset = 0;
+	  } else {
+	    start++;
+	    offset = 0;
+	  }
+
+	  is_first = false;
 	  bool found = false;
 	  while ( start < bucket_count ) {
 	    auto & node = table_->read_node(depth, prefix, start, offset);
@@ -377,8 +386,11 @@ namespace radix_cpp {
 	  if (is_final) {
 	    node.is_final = true;
 	    node.data = data;
-	  } else if (!node.is_final) {
-	    node.data = mk_value_from_key(key);
+	  } else {
+	    node.has_children = true;
+	    if (!node.is_final) {
+	      node.data = mk_value_from_key(key);
+	    }
 	  }
 	  node.prefix_key = prefix_key;
 	  node.depth = i + 1;
