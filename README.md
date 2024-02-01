@@ -1,6 +1,9 @@
 # radix-cpp
 
-## Radix set and map implementation.
+[![CI](https://github.com/rekola/radix-cpp/workflows/Ubuntu-CI/badge.svg)]()
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
+
+## Radix set and map implementation for C++
 
 radix-cpp is an experimental flat implementation of ordered set and
 map. It provides very fast insert and lookup by using a hash table to
