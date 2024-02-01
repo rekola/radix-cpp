@@ -7,12 +7,16 @@
 ## Radix set and map implementation for C++
 
 radix-cpp is an experimental flat implementation of ordered set and
-map. It provides very fast insert and lookup by using a hash table to
-implement a radix sort. Ordinarily hash tables are not ordered, and
-while in theory, an order preserving hash function could be used, it
-would lead to large number of collisions. In this implementation the
-key is divided into multiple 8-bit digits, and each digit is ordered
-seperately while preserving the ordering of the previous stages.
+map. It provides very fast lookup by using a hash table with open
+addressing to implement a radix sort. Ordinarily hash tables are not
+ordered, and while in theory, an order preserving hash function could
+be used, it would lead to large number of collisions. In this
+implementation the key is divided into multiple 8-bit digits, and each
+digit is inserted seperately while preserving the ordering of the
+previous stages.
+
+Iterators are automatically repaired if the underlying table changes,
+so they are stable.
 
 Currently this implementation only works with strings and unsigned
 integers, but more support is forthcoming.
@@ -24,26 +28,29 @@ integers, but more support is forthcoming.
 | Search | Θ(1) | O(n) |
 | Insert | Θ(w) | O(w*n) |
 
-* w is the key length
+* w is the key length in bytes
 
 Iterating over nodes in order can be somewhat expensive if the next
 node has different prefix. Also, it's unclear what the complexity of
-Next operation is.
+the iteration operation is.
 
 ## Implementation
 
+radix-cpp uses Murmur3 as the hash function. The keys can be of
+arbitrary size.
+
 ### Inserting
 
-When inserting an element, the most significant digit is first mapped
-to the first 256 entries in the beginning of the hash table and a node
-is added if it doesn't already exist. The value of the first digit is
-then hashes and the hash value used as an offset to the 256 entry
-table where the second digit is stored. Then the 2-digit prefix is
-hashed and used as the offset for the third digit. This is continued
-until all of the digits are added. A prefix tree is thus created
-inside the hash table.
+When inserting a value is inserted, each 8-bit digit is inserted
+separately with its prefix. A prefix tree is thus created inside the
+hash table.
 
 ### Search
+
+When searching for a known value, only the Node for the last digit
+needs to be found. The input key is split into a prefix of n-1 bytes
+and 1 byte ordinal, where n is the size of the key. If a Node with the
+prefix and ordinal is found, it is returned.
 
 ### Deletion
 
@@ -51,21 +58,22 @@ Deletion is not yet implemented.
 
 ### Iteration
 
-An iterator has three variables: the depth (in the prefix tree), the
-start index (the node that the iterator points to) and the range. The
-range tells us how many nodes are still remaining in the ordered range
-that is currently visiting. While the range is positive, we know that
-there are still nodes available in the ordered range, and when
-advancing to the next stored value, we can check them all in
-order. When the range runs out, we fall back to the previous digit and
-advance that one. If the new node is not a final node (leaf node), we
-go upwards in the tree and find the smallest leaf node.
+An iterator has four variables: the depth (in the prefix tree), the
+unordered prefix, the 8-bit ordinal value, and the offset. While the
+ordinal is smaller than 255, we know that there are still nodes
+available in the ordered range, and when advancing to the next stored
+value, we can check them all in order. When the range runs out, we
+fall back to the previous digit and advance that one. If the new node
+is not a final node, we go upwards in the tree and find the smallest
+final node.
 
 ### Limitations
 
 - Maximum key length is 2^32
 - Deletion is not yet implemented
 - No signed types
+- No 32-bit support
+- How to sort std::any?
 
 ## Extending types
 
