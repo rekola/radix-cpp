@@ -8,7 +8,6 @@
 #include <vector>
 #include <limits>
 #include <functional>
-#include <iostream>
 #include <cstring>
 
 #define RADIXCPP_FLAG_IS_ASSIGNED	1
@@ -16,6 +15,10 @@
 #define RADIXCPP_FLAG_HAS_CHILDREN	4
 
 // #define DEBUG
+
+#ifdef DEBUG
+#include <iostream>
+#endif
 
 namespace radix_cpp {
   static inline uint8_t prefix(uint8_t key, size_t n_digits) noexcept {
@@ -78,13 +81,70 @@ namespace radix_cpp {
     return key.size();
   }
 
-  static inline size_t murmur3_hash(size_t x) noexcept {
-    x ^= x >> 33U;
-    x *= UINT64_C(0xff51afd7ed558ccd);
-    x ^= x >> 33U;
-    x *= UINT64_C(0xc4ceb9fe1a85ec53);
-    x ^= x >> 33U;
-    return x;
+  /* MurmurHash3 was written by Austin Appleby, and is placed in the public domain.
+     The author(s) hereby disclaim copyright to the MurmurHash3 source code.
+  */
+
+  template<typename T, typename std::enable_if<sizeof(T) == 4>::type* = nullptr>
+  static inline T rotl(T x, int_fast8_t r) noexcept {
+    return (x << r) | (x >> (32 - r));
+  }
+
+  template<typename T, typename std::enable_if<sizeof(T) == 8>::type* = nullptr>
+  static inline T rotl(T x, int_fast8_t r) noexcept {
+    return (x << r) | (x >> (64 - r));
+  }
+
+  template<typename T, typename std::enable_if<sizeof(T) == 4>::type* = nullptr>
+  static inline T murmur3_mix_k1(T k1) noexcept {
+    k1 *= 0xcc9e2d51;
+    k1 = rotl(k1, 15);
+    k1 *= 0x1b873593;
+    return k1;
+  }
+
+  template<typename T, typename std::enable_if<sizeof(T) == 8>::type* = nullptr>
+  static inline T murmur3_mix_k1(T k1) noexcept {
+    k1 *= UINT64_C(0x87c37b91114253d5);
+    k1 = rotl(k1, 31);
+    k1 *= UINT64_C(0x4cf5ad432745937f);
+    return k1;
+  }
+
+  template<typename T, typename std::enable_if<sizeof(T) == 4>::type* = nullptr>
+  static inline T murmur3_mix_h1(T h1, T k1) noexcept {
+    h1 ^= k1;
+    h1 = rotl(h1, 13);
+    h1 = h1 * 5 + 0xe6546b64;
+    return h1;
+  }
+
+  template<typename T, typename std::enable_if<sizeof(T) == 8>::type* = nullptr>
+  static inline T murmur3_mix_h1(T h1, T k1) noexcept {
+    h1 ^= k1;
+    h1 = rotl(h1, 27);
+    h1 = h1 * 5 + 0x52dce729;
+    return h1;
+  }
+
+  template<typename T, typename std::enable_if<sizeof(T) == 4>::type* = nullptr>
+  static inline T murmur3_fmix(T h1) noexcept {
+    h1 ^= h1 >> 16;
+    h1 *= 0x85ebca6b;
+    h1 ^= h1 >> 13;
+    h1 *= 0xc2b2ae35;
+    h1 ^= h1 >> 16;
+    return h1;
+  }
+
+  template<typename T, typename std::enable_if<sizeof(T) == 8>::type* = nullptr>
+  static inline T murmur3_fmix(T h1) noexcept {
+    h1 ^= h1 >> 33;
+    h1 *= UINT64_C(0xff51afd7ed558ccd);
+    h1 ^= h1 >> 33;
+    h1 *= UINT64_C(0xc4ceb9fe1a85ec53);
+    h1 ^= h1 >> 33;
+    return h1;
   }
 
   template <typename Key, typename T>
@@ -142,15 +202,15 @@ namespace radix_cpp {
 	offset_ = offset;
       }
 
-      reference operator*() const {
+      reference operator*() const noexcept {
 	size_t h = calc_hash(depth_, unordered_key_, start_);
 	return table_->read_node(h, offset_).data;
       }
-      pointer operator->() {
+      pointer operator->() noexcept {
 	size_t h = calc_hash(depth_, unordered_key_, start_);
 	return &(table_->read_node(h, offset_).data);
       }
-      Iterator& operator++() {
+      Iterator& operator++() noexcept {
 	if (table_size_ != table_->data_size_) {
 	  // table size has changed => repair the iterator
 	  
@@ -221,7 +281,9 @@ namespace radix_cpp {
 	    set_indices(depth, prefix, start, offset);
 	    return *this;
 	  } else if (found) {
+#ifdef DEBUG
 	    std::cerr << "could not find next subiterator\n";
+#endif
 	    abort();
 	  }
 	  // next element in the range was not found
@@ -229,7 +291,7 @@ namespace radix_cpp {
 	}
 	return *this;
       }
-      Iterator operator++(int) {
+      Iterator operator++(int) noexcept {
 	Iterator<IsConst> tmp = *this;
 	++(*this);
 	return tmp;
@@ -272,7 +334,9 @@ namespace radix_cpp {
 	    if (node.flags & RADIXCPP_FLAG_IS_FINAL) break;
 	    prefix_key = getFirstConst(node.data);
 	  } else {
+#ifdef DEBUG
 	    std::cerr << "fast forward: could not find next subiterator for prefix " << prefix_key << "\n";
+#endif
 	    abort();
 	  }
 	}
@@ -288,11 +352,15 @@ namespace radix_cpp {
 	size_t h = calc_hash(depth_, unordered_key_, start_);
 	auto & node = table_->read_node(h, offset_);
 	if (!node.flags) {
+#ifdef DEBG
 	  std::cerr << "error, node not assigned\n";
+#endif
 	  abort();
 	}
 	if (node.depth != depth_) {
+#ifdef DEBUG
 	  std::cerr << "wrong node 1\n";
+#endif
 	  abort();
 	}
 	uint32_t depth = depth_ - 1;
@@ -317,12 +385,16 @@ namespace radix_cpp {
 	  }
 	}
 	if (start == bucket_count) {
+#ifdef DEBUG
 	  std::cerr << "down failed\n";
+#endif
 	  abort();
 	}
 	auto & node2 = table_->read_node(h, offset);
 	if (getFirstConst(node2.data) != node.prefix_key) {
+#ifdef DEBUG
 	  std::cerr << "wrong node 2\n";
+#endif
 	  abort();
 	}
 #ifdef DEBUG
@@ -341,7 +413,7 @@ namespace radix_cpp {
     using iterator = Iterator<false>;
     using const_iterator = Iterator<true>;
 
-    Table() { }
+    Table() noexcept { }
     Table(Table && other) noexcept
       : num_entries_(std::exchange(other.num_entries_, 0)),
 	num_final_entries_(std::exchange(other.num_final_entries_, 0)),
@@ -364,6 +436,10 @@ namespace radix_cpp {
     Table& operator=(const Table & other) = delete;
 
     ~Table() {
+      clear();
+    }
+
+    void clear() noexcept {
       for (size_t i = 0; i < data_size_; i++) {
 	auto & node = data_[i];
 	if (node.flags) {
@@ -372,15 +448,11 @@ namespace radix_cpp {
 	}
       }
       std::free(data_);
-    }
-
-    void clear() {
-      std::free(data_);
       num_entries_ = num_final_entries_ = num_inserts_ = num_insert_collisions_ = data_size_ = 0;
       data_ = NULL;
     }
 
-    iterator find(const key_type & key) {
+    iterator find(const key_type & key) noexcept {
       uint32_t depth = static_cast<uint32_t>(keysize(key));
       key_type prefix_key = prefix(key, depth - 1);
       size_t start = top(key), offset = 0;
@@ -488,7 +560,7 @@ namespace radix_cpp {
       }
     }
 
-    iterator begin() {
+    iterator begin() noexcept {
       if (size()) {
 	iterator it(this);
 	it.fast_forward();
@@ -518,13 +590,15 @@ namespace radix_cpp {
     getFirstConst(value_type const& vt) noexcept {
       return vt.first;
     }
-    
+
+    // mk_value_from_key creates a value_type from key_type.
+    // This version is for sets, where value_type == key_type
     static value_type mk_value_from_key(value_type k) noexcept {
       return k;
     }
     // this one is for maps
     template <typename Q = mapped_type>
-    typename std::enable_if<!std::is_void<Q>::value, value_type>::type
+    static typename std::enable_if<!std::is_void<Q>::value, value_type>::type
     mk_value_from_key(key_type const& k) noexcept {
       return std::make_pair(k, mapped_type());
     }
@@ -561,22 +635,20 @@ namespace radix_cpp {
       std::swap(data_size_, new_table.data_size_);
     }
 
-    Node & read_node(size_t h, size_t offset) {
+    inline Node & read_node(size_t h, size_t offset) noexcept {
       return data_[(h + offset) & (data_size_ - 1)];
     }
 
-    static inline size_t hash_combine(size_t seed, size_t hash) noexcept {
-      // see https://www.boost.org/doc/libs/1_55_0/doc/html/hash/reference.html#boost.hash_combine
-      seed ^= hash + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-      return seed;
-    }
+    // calc_hash() uses Murmur3 to calculate hash for a Node.
+    // Murmur3 operations are specialized for both 32 bit and 64 bit size_t
+    static inline size_t calc_hash(uint32_t depth, const key_type & unordered_key, size_t ordered_key) noexcept {
+      auto k1 = murmur3_mix_k1(std::hash<key_type>{}(unordered_key));
+      auto h1 = murmur3_mix_h1(std::size_t{0}, k1);
 
-    // hash function XORs the hash of the key size to the final hash,
-    // so that all the prefixes of 0 get a different hash
-    static size_t calc_hash(uint32_t depth, const key_type & unordered_key, size_t ordered_key) noexcept {
-      return hash_combine(hash_combine(murmur3_hash(std::hash<key_type>{}(unordered_key)),
-				       murmur3_hash(depth)),
-			  murmur3_hash(ordered_key));
+      k1 = murmur3_mix_k1((ordered_key << 32) | depth);
+      h1 = murmur3_mix_h1(h1, k1);
+
+      return murmur3_fmix(h1);
     }
 
     size_t num_entries_ = 0, num_final_entries_ = 0;
