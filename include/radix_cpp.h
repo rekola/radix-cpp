@@ -99,7 +99,7 @@ namespace radix_cpp {
     struct Node {
       bool is_assigned = false, is_final = false;
       value_type data;
-      key_type key, prefix_key;
+      key_type prefix_key;
       size_t depth = 0;
     };
 
@@ -137,7 +137,7 @@ namespace radix_cpp {
 	  if (node00.prefix_key != unordered_key_) {
 	    abort();
 	  }
-	  // std::cerr << "++ start, prefix = " << prefix << ", key = " << tmp.key << ", depth = " << depth << ", start = " << start << ", range = " << range << "\n";
+	  // std::cerr << "++ start, prefix = " << prefix << ", key = " << getFirstConst(tmp.data) << ", depth = " << depth << ", start = " << start << ", range = " << range << "\n";
 	  start++;
 	  offset = 0;
 
@@ -148,7 +148,7 @@ namespace radix_cpp {
 	      start++;
 	      offset = 0;
 	      continue;
-	    } else if (node.depth != depth || node.prefix_key != prefix || top(node.key) != start) {
+	    } else if (node.depth != depth || node.prefix_key != prefix || top(getFirstConst(node.data)) != start) {
 	      offset++;
 	      continue;
 	    }
@@ -157,7 +157,7 @@ namespace radix_cpp {
 	      break;
 	    } else {
 	      depth++;
-	      prefix = node.key;
+	      prefix = getFirstConst(node.data);
 	      start = offset = 0;
 	    }
 	  }
@@ -198,7 +198,7 @@ namespace radix_cpp {
 	    prefix_key = key_type();
 	  } else {
 	    auto & prev_node = table_->read_node(depth_, unordered_key_, start_, offset_);
-	    prefix_key = prev_node.key;
+	    prefix_key = getFirstConst(prev_node.data);
 	  }
 	  size_t start = 0, offset = 0;
 	  while (start < bucket_count) {
@@ -218,7 +218,7 @@ namespace radix_cpp {
 	      abort();
 	    }
 	    set_indices(depth_ + 1, prefix_key, start, offset);
-	    std::cerr << "ff: node key = " << node.key << ", depth = " << depth_ << ", prefix_key = " << unordered_key_ << ", start = " << start_ << ", offset = " << offset_ << "\n";
+	    std::cerr << "ff: node key = " << getFirstConst(node.data) << ", depth = " << depth_ << ", prefix_key = " << unordered_key_ << ", start = " << start_ << ", offset = " << offset_ << "\n";
 	    if (node.is_final) break;
 	  } else {
 	    std::cerr << "fast forward: could not find next subiterator for prefix " << prefix_key << "\n";
@@ -249,14 +249,14 @@ namespace radix_cpp {
 	size_t start = top(new_key);
 	size_t offset = 0;
 #ifdef DEBUG
-	std::cerr << "down(): depth = " << depth_ << ", start = " << start_ << ", offset = " << offset_ << ", key = " << node.key << ", prefix = " << node.prefix_key << ", new key = " << new_key << ", new prefix = " << new_prefix_key << ", start = " << start << "\n";
+	std::cerr << "down(): depth = " << depth_ << ", start = " << start_ << ", offset = " << offset_ << ", key = " << getFirstConst(node.data) << ", prefix = " << node.prefix_key << ", new key = " << new_key << ", new prefix = " << new_prefix_key << ", start = " << start << "\n";
 #endif
 	while ( start < bucket_count ) {
 	  auto & node = table_->read_node(depth, new_prefix_key, start, offset);
 	  if (!node.is_assigned) {
 	    start++;
 	    offset = 0;
-	  } else if (node.depth != depth || node.key != new_key) {
+	  } else if (node.depth != depth || getFirstConst(node.data) != new_key) {
 	    offset++;
 	  } else {
 	    break;
@@ -267,12 +267,12 @@ namespace radix_cpp {
 	  abort();
 	}
 	auto & node2 = table_->read_node(depth, new_prefix_key, start, offset);
-	if (node2.key != node.prefix_key) {
+	if (getFirstConst(node2.data) != node.prefix_key) {
 	  std::cerr << "wrong node 2\n";
 	  abort();
 	}
 #ifdef DEBUG
-	std::cerr << "down(): depth = " << depth << ", prefix = " << new_prefix_key << ", key = " << node2.key << ", start = " << start << ", offset = " << offset << "\n";
+	std::cerr << "down(): depth = " << depth << ", prefix = " << new_prefix_key << ", key = " << getFirstConst(node2.data) << ", start = " << start << ", offset = " << offset << "\n";
 #endif
 	set_indices(depth, new_prefix_key, start, offset);
       }
@@ -305,10 +305,10 @@ namespace radix_cpp {
 	auto & node = read_node(n, prefix_key, start, offset);
 	if (!node.is_assigned) {
 	  break; // not found
-	} else if (node.depth != n || node.prefix_key != prefix_key || top(node.key) != start) {
+	} else if (node.depth != n || node.prefix_key != prefix_key || top(getFirstConst(node.data)) != start) {
 	  // collision
 	  offset++;
-	} else if (node.is_final && node.key == key) {
+	} else if (node.is_final && getFirstConst(node.data) == key) {
 	  it.set_indices(n, prefix_key, start, offset);
 	  break;
 	} else {
@@ -348,7 +348,7 @@ namespace radix_cpp {
 	  auto & node = read_node(i + 1, prefix_key, start, offset);
 	  if (node.is_assigned) {
 	    if (node.depth == i + 1 && node.prefix_key == prefix_key) {
-	      if (node.key != key) {
+	      if (getFirstConst(node.data) != key) {
 		collisions++;
 		offset++;
 		continue;
@@ -373,10 +373,13 @@ namespace radix_cpp {
 	  } else if (is_final) {
 	    is_new = false;
 	  }
-	  node.data = data;
 	  node.is_assigned = true;
-	  node.is_final = is_final;
-	  node.key = key;
+	  if (is_final) {
+	    node.is_final = true;
+	    node.data = data;
+	  } else if (!node.is_final) {
+	    node.data = mk_value_from_key(key);
+	  }
 	  node.prefix_key = prefix_key;
 	  node.depth = i + 1;
 	  break;
@@ -415,14 +418,24 @@ namespace radix_cpp {
   private:
     // getFirstConst returns the key from value_type for either set or map
     // This version is for sets, where value_type == key_type
-    key_type const& getFirstConst(key_type const& k) const noexcept {
+    static key_type const& getFirstConst(key_type const& k) noexcept {
       return k;
     }
     // this one is for maps
     template <typename Q = mapped_type>
-    typename std::enable_if<!std::is_void<Q>::value, key_type const&>::type
-    getFirstConst(value_type const& vt) const noexcept {
+    static typename std::enable_if<!std::is_void<Q>::value, key_type const&>::type
+    getFirstConst(value_type const& vt) noexcept {
       return vt.first;
+    }
+    
+    static value_type mk_value_from_key(value_type k) noexcept {
+      return k;
+    }
+    // this one is for maps
+    template <typename Q = mapped_type>
+    typename std::enable_if<!std::is_void<Q>::value, value_type>::type
+    mk_value_from_key(key_type const& k) noexcept {
+      return std::make_pair(k, mapped_type());
     }
 
     void resize(size_t new_size) {
