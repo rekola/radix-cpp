@@ -1,34 +1,37 @@
 #include <radix_cpp.h>
 
 #include <iostream>
+#include <set>
 
 int main(void) {
   radix_cpp::set<uint8_t> S;
-  S.insert(10);
+  S.insert(65);
   S.insert(125);
   for (auto & v : S) {
-    std::cout << (int)v << "\n";
+    std::cerr << (int)v << "\n";
   }
 
-  radix_cpp::map<uint8_t, std::string> M;
-  M.insert(std::make_pair(1, "Hello"));
-  M.insert(std::make_pair(2, "World"));
-
+  radix_cpp::map<uint32_t, std::string> M;
+  M.insert(std::make_pair(65536, "!!"));
+  M.insert(std::make_pair(256, "World"));
+  M[9999] = "Nice!";
+  M.insert(std::make_pair(0, "Hello"));
+  
   for (auto & [ key, value ] : M) {
-    std::cout << (int)key << " = " << value << "\n";
+    std::cerr << (int)key << " = " << value << "\n";
   }
 
-  std::cout << "S2\n";
+  std::cerr << "S2\n";
   radix_cpp::set<uint16_t> S2;
   S2.insert(1000);
   S2.insert(1001);
   S2.insert(29999);
   S2.insert(30000);
   for (auto & v : S2) {
-    std::cout << v << "\n";
+    std::cerr << v << "\n";
   }
 
-  std::cout << "S3\n";
+  std::cerr << "S3\n";
   radix_cpp::set<uint32_t> S3;
   S3.insert(1000000000);
   S3.insert(100000000);
@@ -40,20 +43,38 @@ int main(void) {
   S3.insert(100);
   S3.insert(10);
   S3.insert(1);
+
   for (auto & v : S3) {
-    std::cout << v << "\n";
+    std::cerr << v << "\n";
   }
 
-  radix_cpp::set<std::string> S4;
-  S4.insert("Hello World");
-  S4.insert("c");
-  S4.insert("b");
-  S4.insert("a");
-  S4.insert("A");
-  S4.insert("B");
-  S4.insert("Z");
-  for (auto & v : S4) {
-    std::cout << v << "\n";
+  auto it = S3.find(1000);
+  if (it != S3.end()) {
+    std::cerr << "1000 = " << *it << "\n";
+  }
+
+  radix_cpp::set<uint32_t> S4;
+  for (uint32_t i = 0; i < 10000000; i++) {
+    S4.insert(i);
+  }
+  std::cerr << "S4, size = " << S4.size() << "\n";
+  
+  radix_cpp::set<std::string> S5;
+  S5.insert("Hello World");
+  S5.insert("c");
+  S5.insert("b");
+  S5.insert("a");
+  S5.insert("A");
+  S5.insert("B");
+  S5.insert("Z");
+#if 0
+  S5.insert("ab");
+  S5.insert("abc");
+  S5.insert("abcd");
+#endif
+  S5.insert("@");
+  for (auto & v : S5) {
+    std::cerr << v << "\n";
   }
   
   return 0;
