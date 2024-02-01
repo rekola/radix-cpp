@@ -106,6 +106,7 @@ namespace radix_cpp {
       value_type data;
       key_type prefix_key;
       uint32_t flags, depth;
+      size_t hash;
     };
 
   public:
@@ -123,13 +124,16 @@ namespace radix_cpp {
 	: table_(table),
 	  start_(0),
 	  offset_(0),
-	  depth_(0) { }
+	  depth_(0),
+	  table_size_(table->data_size_) { }
+      
       Iterator(Self * table, uint32_t depth, key_type unordered_key, size_t start, size_t offset) noexcept
 	: table_(table),
 	  start_(start),
 	  offset_(offset),
 	  unordered_key_(std::move(unordered_key)),
-	  depth_(depth) { }
+	  depth_(depth),
+      	  table_size_(table->data_size_) { }
       
       void set_indices(uint32_t depth, key_type unordered_key, size_t start, size_t offset) noexcept {
 	depth_ = depth;
@@ -145,6 +149,22 @@ namespace radix_cpp {
 	return &(table_->read_node(depth_, unordered_key_, start_, offset_).data);
       }
       Iterator& operator++() {
+	if (table_size_ != table_->data_size_) {
+	  // table size has changed => repair the iterator
+	  
+	  table_size_ = table_->data_size_;
+	  offset_ = 0;
+	  while ( 1 ) {
+	    auto & node = table_->read_node(depth_, unordered_key_, start_, offset_);
+	    if (node.flags & RADIXCPP_FLAG_IS_ASSIGNED &&
+		node.depth == depth_ && node.prefix_key == unordered_key_ &&
+		top(getFirstConst(node.data)) == start_) {
+	      break;
+	    }
+	    offset_++;
+	  }
+	}
+	
 	bool is_first = true;
 	while ( depth_ > 0 ) {
 	  key_type prefix = unordered_key_;
@@ -307,6 +327,7 @@ namespace radix_cpp {
       size_t start_, offset_;
       key_type unordered_key_;
       uint32_t depth_;
+      size_t table_size_;
     };
     
     using iterator = Iterator<false>;
@@ -351,10 +372,9 @@ namespace radix_cpp {
     }
 
     std::pair<iterator,bool> insert(const value_type& vt) {
-      // Check the load factor
       if (!data_) {
 	init(bucket_count);
-      } else if (10 * num_entries_ / data_size_ >= max_load_factor) {
+      } else if (10 * num_entries_ / data_size_ >= max_load_factor) { // Check the load factor
 	resize(data_size_ * 2);
       }
 
@@ -404,6 +424,7 @@ namespace radix_cpp {
 	    new (static_cast<void*>(&(node.prefix_key))) key_type(std::move(prefix_key));
 	    node.flags = RADIXCPP_FLAG_IS_ASSIGNED;
 	    node.depth = depth;
+	    node.hash = h;
 	    num_entries_++;
 	  } else if (is_final) {
 	    is_new = false;
@@ -491,11 +512,9 @@ namespace radix_cpp {
       for (size_t i = 0; i < data_size_; i++) {
 	Node & node = data_[i];
 	if (node.flags & RADIXCPP_FLAG_IS_ASSIGNED) {
-	  size_t start = top(getFirstConst(node.data));
 	  size_t offset = 0;
-	  size_t h = calc_hash(node.depth, node.prefix_key, start);
 	  while ( 1 ) {
-	    Node & output_node = new_table.read_node(h, offset);
+	    Node & output_node = new_table.read_node(node.hash, offset);
 	    if (output_node.flags) {
 	      offset++;
 	      collisions++;
