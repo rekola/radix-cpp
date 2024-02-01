@@ -179,10 +179,11 @@ namespace radix_cpp {
       using value_type        = typename Self::value_type;
       using reference         = typename std::conditional<IsConst, value_type const&, value_type&>::type;
       using pointer           = typename std::conditional<IsConst, value_type const*, value_type*>::type;
-      
+
+      // end iterator
       Iterator(Self * table) noexcept
 	: table_(table),
-	  start_(0),
+	  start_(1),
 	  offset_(0),
 	  depth_(0),
 	  table_size_(table->data_size_) { }
@@ -228,14 +229,17 @@ namespace radix_cpp {
 	    offset_++;
 	  }
 	}
-	
+
 	bool is_first = true;
-	while ( depth_ > 0 ) {
+	while ( !(depth_ == 0 && start_ == 1) ) {
 	  key_type prefix = unordered_key_;
 	  uint32_t depth = depth_;
 	  size_t start = start_, offset = 0;
 
-	  if (!is_first) {
+	  if (depth == 0) {
+	    depth++;
+	    start = 0;
+	  } else if (!is_first) {
 	    start++;
 	  } else {
 	    size_t h = calc_hash(depth, prefix, start);
@@ -306,6 +310,20 @@ namespace radix_cpp {
       }
 
       void fast_forward() {
+	// first look for 0-length node (depth = ordinal = 0)
+	size_t h0 = calc_hash(0, key_type(), 0);
+	size_t offset0 = 0;
+	while (1) {
+	  auto & node = table_->read_node(h0, offset0);
+	  if (!node.flags) break;
+	  else if (node.depth == 0) {
+	    set_indices(0, key_type(), 0, offset0);
+	    return;
+	  } else {
+	    offset0++;
+	  }
+	}
+
 	auto prefix_key = key_type();
 	while (1) {
 	  size_t start = 0, offset = 0;
@@ -316,10 +334,10 @@ namespace radix_cpp {
 	      start++;
 	      offset = 0;
 	      h = calc_hash(depth_ + 1, prefix_key, start);
-	    } else if (depth_ + 1 != node.depth || node.prefix_key != prefix_key) {
-	      offset++;
-	    } else {
+	    } else if (depth_ + 1 == node.depth && node.prefix_key == prefix_key && top(getFirstConst(node.data)) ==start) {
 	      break;
+	    } else {
+	      offset++;
 	    }
 	  }
 	  if (start < bucket_count) {
@@ -344,9 +362,10 @@ namespace radix_cpp {
 
     private:
       void down() {
-	if (depth_ == 1) {
+	if (depth_ <= 1) {
 	  // become an end iterator
-	  start_ = offset_ = depth_ = 0;
+	  start_ = 1;
+	  offset_ = depth_ = 0;
 	  return;
 	}
 	size_t h = calc_hash(depth_, unordered_key_, start_);
@@ -454,9 +473,13 @@ namespace radix_cpp {
 
     iterator find(const key_type & key) noexcept {
       uint32_t depth = static_cast<uint32_t>(keysize(key));
-      key_type prefix_key = prefix(key, depth - 1);
-      size_t start = top(key), offset = 0;
-      size_t h = calc_hash(depth, prefix_key, start);
+      auto prefix_key = key_type();
+      size_t start = 0;
+      if (depth) {
+	prefix_key = prefix(key, depth - 1);
+	start = top(key);
+      }
+      size_t offset = 0, h = calc_hash(depth, prefix_key, start);
 
       while ( 1 ) {
 	auto & node = read_node(h, offset);
@@ -484,17 +507,25 @@ namespace radix_cpp {
       auto & key0 = getFirstConst(vt);
       auto prefix_key = key_type();
       
-#ifdef DEBUG
-      std::cerr << "inserting " << key0 << "\n";
-#endif
       num_inserts_++;
+
+      // for empty key, start from depth of 0
+      uint32_t n = static_cast<uint32_t>(keysize(key0));
+      uint32_t depth = n == 0 ? 0 : 1;
+
+#ifdef DEBUG
+	std::cerr << "inserting node " << key0 << "\n";
+#endif
       
-      for (uint32_t depth = 1, n = static_cast<uint32_t>(keysize(key0)); depth <= n; depth++) {
+      for ( ; depth <= n; depth++) {
 	bool is_final = depth == n;
-	key_type key = prefix(key0, depth);
-	size_t start = top(key);
-	size_t offset = 0;
-	size_t h = calc_hash(depth, prefix_key, start);
+	auto key = key_type();
+	size_t start = 0;
+	if (depth) {
+	  key = prefix(key0, depth);
+	  start = top(key);
+	}
+	size_t offset = 0, h = calc_hash(depth, prefix_key, start);
 
 	while ( 1 ) {
 	  auto & node = read_node(h, offset);
@@ -515,7 +546,7 @@ namespace radix_cpp {
 	    }
 	  }
 #ifdef DEBUG
-	  std::cerr << "  key = " << key << ", start = " << start << ", offset = " << offset << ", prefix = " << prefix_key << "\n";
+	  std::cerr << "  h = " << h << ", key = " << key << ", start = " << start << ", offset = " << offset << ", prefix = " << prefix_key << "\n";
 #endif
 	  bool is_new = true;
 	  if (!node.flags) {
@@ -645,6 +676,7 @@ namespace radix_cpp {
       auto k1 = murmur3_mix_k1(std::hash<key_type>{}(unordered_key));
       auto h1 = murmur3_mix_h1(std::size_t{0}, k1);
 
+      // FIXME: on 32 bit system, the ordered key is lost
       k1 = murmur3_mix_k1((ordered_key << 32) | depth);
       h1 = murmur3_mix_h1(h1, k1);
 
