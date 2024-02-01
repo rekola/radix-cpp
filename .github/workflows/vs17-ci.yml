@@ -29,5 +29,4 @@ jobs:
         run: cmake --build build
       - name: Testing
         run: |
-          cd build
-          test.exe
+          build\Debug\test.exe
