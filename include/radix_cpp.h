@@ -371,9 +371,10 @@ namespace radix_cpp {
 	key_type key = prefix(key0, depth);
 	size_t start = top(key);
 	size_t offset = 0;
+	size_t h = calc_hash(depth, prefix_key, start);
 
 	while ( 1 ) {
-	  auto & node = read_node(depth, prefix_key, start, offset);
+	  auto & node = read_node(h, offset);
 	  if (node.flags) {
 	    if (node.depth == depth && node.prefix_key == prefix_key) {
 	      if (getFirstConst(node.data) != key) {
@@ -486,6 +487,7 @@ namespace radix_cpp {
     void resize(size_t new_size) {
       Self new_table;
       new_table.init(new_size);
+      size_t collisions = 0;
       for (size_t i = 0; i < data_size_; i++) {
 	Node & node = data_[i];
 	if (node.flags & RADIXCPP_FLAG_IS_ASSIGNED) {
@@ -493,9 +495,10 @@ namespace radix_cpp {
 	  size_t offset = 0;
 	  size_t h = calc_hash(node.depth, node.prefix_key, start);
 	  while ( 1 ) {
-	    Node & output_node = new_table.data_[(h + offset) & (new_size - 1)];
+	    Node & output_node = new_table.read_node(h, offset);
 	    if (output_node.flags) {
 	      offset++;
+	      collisions++;
 	    } else {
 	      std::swap(node, output_node);
 	      break;
@@ -503,12 +506,17 @@ namespace radix_cpp {
 	  }
 	}
       }
+      num_insert_collisions_ += collisions;
       std::swap(data_, new_table.data_);
       std::swap(data_size_, new_table.data_size_);
     }
 
+    Node & read_node(size_t h, size_t offset) {
+      return data_[(h + offset) & (data_size_ - 1)];
+    }
+
     Node & read_node(uint32_t depth, const key_type & unordered_key, size_t ordered_key, size_t offset) {
-      return data_[(calc_hash(depth, unordered_key, ordered_key) + offset) & (data_size_ - 1)];
+      return read_node(calc_hash(depth, unordered_key, ordered_key), offset);
     }
 
     static inline size_t hash_combine(size_t seed, size_t hash) noexcept {
