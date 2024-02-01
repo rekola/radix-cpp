@@ -93,7 +93,8 @@ namespace radix_cpp {
     static constexpr bool is_map = !std::is_void<T>::value;
     static constexpr bool is_set = !is_map;
     static constexpr size_t bucket_count = 256; // bucket count for the ordered portion of the key
-
+    static constexpr size_t max_load_factor = 6;
+    
     using key_type = Key;
     using mapped_type = T;
     using value_type = typename std::conditional<is_set, Key, std::pair<Key, T>>::type;
@@ -118,7 +119,11 @@ namespace radix_cpp {
       using reference         = typename std::conditional<IsConst, value_type const&, value_type&>::type;
       using pointer           = typename std::conditional<IsConst, value_type const*, value_type*>::type;
       
-      Iterator(Self * table) noexcept : table_(table) { }
+      Iterator(Self * table) noexcept
+	: table_(table),
+	  start_(0),
+	  offset_(0),
+	  depth_(0) { }
       Iterator(Self * table, uint32_t depth, key_type unordered_key, size_t start, size_t offset) noexcept
 	: table_(table),
 	  start_(start),
@@ -144,23 +149,22 @@ namespace radix_cpp {
 	while ( depth_ > 0 ) {
 	  key_type prefix = unordered_key_;
 	  uint32_t depth = depth_;
-	  size_t start = start_, offset = offset_;
-	  auto & node00 = table_->read_node(depth, prefix, start, offset);
-	  if (node00.prefix_key != unordered_key_) {
-	    abort();
-	  }
-	  // std::cerr << "++ start, prefix = " << prefix << ", key = " << getFirstConst(tmp.data) << ", depth = " << depth << ", start = " << start << ", range = " << range << "\n";
+	  size_t start = start_, offset = 0;
 
-	  if (is_first && node00.flags & RADIXCPP_FLAG_IS_FINAL && node00.flags & RADIXCPP_FLAG_HAS_CHILDREN) {
-	    depth++;
-	    prefix = getFirstConst(node00.data);
-	    start = offset = 0;
-	  } else {
+	  if (!is_first) {
 	    start++;
-	    offset = 0;
+	  } else {
+	    auto & node = table_->read_node(depth, prefix, start, offset);
+	    if (node.flags & RADIXCPP_FLAG_IS_FINAL && node.flags & RADIXCPP_FLAG_HAS_CHILDREN) {
+	      depth++;
+	      prefix = getFirstConst(node.data);
+	      start = 0;
+	    } else {
+	      start++;
+	    }
+	    is_first = false;
 	  }
-
-	  is_first = false;
+	  
 	  bool found = false;
 	  while ( start < bucket_count ) {
 	    auto & node = table_->read_node(depth, prefix, start, offset);
@@ -238,7 +242,9 @@ namespace radix_cpp {
 	      abort();
 	    }
 	    set_indices(depth_ + 1, prefix_key, start, offset);
+#ifdef DEBUG
 	    std::cerr << "ff: node key = " << getFirstConst(node.data) << ", depth = " << depth_ << ", prefix_key = " << unordered_key_ << ", start = " << start_ << ", offset = " << offset_ << "\n";
+#endif
 	    if (node.flags & RADIXCPP_FLAG_IS_FINAL) break;
 	  } else {
 	    std::cerr << "fast forward: could not find next subiterator for prefix " << prefix_key << "\n";
@@ -298,9 +304,9 @@ namespace radix_cpp {
       }
 
       Self * table_;
-      size_t start_ = 0, offset_ = 0;
+      size_t start_, offset_;
       key_type unordered_key_;
-      uint32_t depth_ = 0;
+      uint32_t depth_;
     };
     
     using iterator = Iterator<false>;
@@ -348,22 +354,21 @@ namespace radix_cpp {
       // Check the load factor
       if (!data_) {
 	init(bucket_count);
-      } else if (10 * num_entries_ / data_size_ >= 5) {
+      } else if (10 * num_entries_ / data_size_ >= max_load_factor) {
 	resize(data_size_ * 2);
       }
 
-      key_type key0 = getFirstConst(vt);
-      size_t collisions = 0;
-
+      auto & key0 = getFirstConst(vt);
+      key_type prefix_key = prefix(key0, 0);
+      
 #ifdef DEBUG
       std::cerr << "inserting " << key0 << "\n";
 #endif
+      num_inserts_++;
       
-      for (size_t i = 0, n = keysize(key0); i < n; i++) {
-	uint32_t depth = static_cast<uint32_t>(i + 1);
-	bool is_final = i + 1 == n;
-	key_type prefix_key = prefix(key0, i);
-	key_type key = prefix(key0, i + 1);
+      for (uint32_t depth = 1, n = static_cast<uint32_t>(keysize(key0)); depth <= n; depth++) {
+	bool is_final = depth == n;
+	key_type key = prefix(key0, depth);
 	size_t start = top(key);
 	size_t offset = 0;
 
@@ -372,7 +377,7 @@ namespace radix_cpp {
 	  if (node.flags) {
 	    if (node.depth == depth && node.prefix_key == prefix_key) {
 	      if (getFirstConst(node.data) != key) {
-		collisions++;
+		num_insert_collisions_++;
 		offset++;
 		continue;
 	      } else {
@@ -381,7 +386,7 @@ namespace radix_cpp {
 	    } else {
 	      // collision
 	      offset++;
-	      collisions++;
+	      num_insert_collisions_++;
 	      continue;
 	    }
 	  }
@@ -411,6 +416,8 @@ namespace radix_cpp {
 	    break;
 	  }
 	}
+
+	prefix_key = std::move(key);
       }
 
       // error
@@ -429,9 +436,13 @@ namespace radix_cpp {
     }
 
     iterator begin() {
-      iterator it(this);
-      it.fast_forward();
-      return it;
+      if (size()) {
+	iterator it(this);
+	it.fast_forward();
+	return it;
+      } else {
+	return end();
+      }
     }
     iterator end() noexcept {
       // iterator is by default and end iterator (the depth is zero)
@@ -439,6 +450,8 @@ namespace radix_cpp {
     }
 
     size_t size() const noexcept { return num_final_entries_; }
+    size_t num_inserts() const noexcept { return num_inserts_; }
+    size_t num_insert_collisions() const noexcept { return num_insert_collisions_; }
     
   private:
     // getFirstConst returns the key from value_type for either set or map
@@ -513,6 +526,7 @@ namespace radix_cpp {
     }
 
     size_t num_entries_ = 0, num_final_entries_ = 0;
+    size_t num_inserts_ = 0, num_insert_collisions_ = 0;
     size_t data_size_ = 0;
     Node* data_ = NULL;
   };
