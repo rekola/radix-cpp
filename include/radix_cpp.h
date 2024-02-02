@@ -178,32 +178,33 @@ namespace radix_cpp {
       // end iterator
       Iterator(Self * table) noexcept
 	: table_(table),
-	  start_(1),
+	  ordinal_(1),
 	  offset_(0),
+	  prefix_key_(),
 	  depth_(0),
 	  table_size_(table->data_size_) { }
       
-      Iterator(Self * table, uint32_t depth, key_type unordered_key, size_t start, size_t offset) noexcept
+      Iterator(Self * table, uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset) noexcept
 	: table_(table),
-	  start_(start),
+	  ordinal_(ordinal),
 	  offset_(offset),
-	  unordered_key_(std::move(unordered_key)),
+	  prefix_key_(std::move(prefix_key)),
 	  depth_(depth),
       	  table_size_(table->data_size_) { }
       
-      void set_indices(uint32_t depth, key_type unordered_key, size_t start, size_t offset) noexcept {
+      void set_indices(uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset) noexcept {
 	depth_ = depth;
-	unordered_key_ = unordered_key;
-	start_ = start;
+	prefix_key_ = std::move(prefix_key);
+	ordinal_ = ordinal;
 	offset_ = offset;
       }
 
       reference operator*() const noexcept {
-	size_t h = calc_hash(depth_, unordered_key_, start_);
+	size_t h = calc_hash(depth_, prefix_key_, ordinal_);
 	return table_->read_node(h, offset_).data;
       }
       pointer operator->() noexcept {
-	size_t h = calc_hash(depth_, unordered_key_, start_);
+	size_t h = calc_hash(depth_, prefix_key_, ordinal_);
 	return &(table_->read_node(h, offset_).data);
       }
       Iterator& operator++() noexcept {
@@ -212,13 +213,13 @@ namespace radix_cpp {
 	  
 	  table_size_ = table_->data_size_;
 	  offset_ = 0;
-	  size_t h = calc_hash(depth_, unordered_key_, start_);
+	  size_t h = calc_hash(depth_, prefix_key_, ordinal_);
 
 	  while ( 1 ) {
 	    auto & node = table_->read_node(h, offset_);
 	    if (node.flags & RADIXCPP_FLAG_IS_ASSIGNED &&
-		node.depth == depth_ && node.prefix_key == unordered_key_ &&
-		top(getFirstConst(node.data)) == start_) {
+		node.depth == depth_ && node.prefix_key == prefix_key_ &&
+		top(getFirstConst(node.data)) == ordinal_) {
 	      break;
 	    }
 	    offset_++;
@@ -226,39 +227,39 @@ namespace radix_cpp {
 	}
 
 	bool is_first = true;
-	while ( !(depth_ == 0 && start_ == 1) ) {
-	  key_type prefix = unordered_key_;
+	while ( !(depth_ == 0 && ordinal_ == 1) ) {
+	  key_type prefix = prefix_key_;
 	  uint32_t depth = depth_;
-	  size_t start = start_, offset = 0;
+	  size_t ordinal = ordinal_, offset = 0;
 
 	  if (depth == 0) {
 	    depth++;
-	    start = 0;
+	    ordinal = 0;
 	  } else if (!is_first) {
-	    start++;
+	    ordinal++;
 	  } else {
-	    size_t h = calc_hash(depth, prefix, start);
+	    size_t h = calc_hash(depth, prefix, ordinal);
 	    auto & node = table_->read_node(h, offset);
 	    if (node.flags & RADIXCPP_FLAG_IS_FINAL && node.flags & RADIXCPP_FLAG_HAS_CHILDREN) {
 	      depth++;
 	      prefix = getFirstConst(node.data);
-	      start = 0;
+	      ordinal = 0;
 	    } else {
-	      start++;
+	      ordinal++;
 	    }
 	    is_first = false;
 	  }
 
-	  size_t h = calc_hash(depth, prefix, start);
+	  size_t h = calc_hash(depth, prefix, ordinal);
 	  bool found = false;
-	  while ( start < bucket_count ) {
+	  while ( ordinal < bucket_count ) {
 	    auto & node = table_->read_node(h, offset);
 	    if (!node.flags) {
-	      start++;
+	      ordinal++;
 	      offset = 0;
-	      h = calc_hash(depth, prefix, start);
+	      h = calc_hash(depth, prefix, ordinal);
 	      continue;
-	    } else if (node.depth != depth || node.prefix_key != prefix || top(getFirstConst(node.data)) != start) {
+	    } else if (node.depth != depth || node.prefix_key != prefix || top(getFirstConst(node.data)) != ordinal) {
 	      offset++;
 	      continue;
 	    }
@@ -268,16 +269,16 @@ namespace radix_cpp {
 	    } else {
 	      depth++;
 	      prefix = getFirstConst(node.data);
-	      start = offset = 0;
-	      h = calc_hash(depth, prefix, start);
+	      ordinal = offset = 0;
+	      h = calc_hash(depth, prefix, ordinal);
 	    }
 	  }
 
-	  if (start < bucket_count) {
+	  if (ordinal < bucket_count) {
 #ifdef DEBUG
-	    std::cerr << "++ depth = " << depth << ", prefix = " << prefix << ", start = " << start << ", offset = " << offset << "\n";
+	    std::cerr << "++ depth = " << depth << ", prefix = " << prefix << ", ordinal = " << ordinal << ", offset = " << offset << "\n";
 #endif
-	    set_indices(depth, prefix, start, offset);
+	    set_indices(depth, prefix, ordinal, offset);
 	    return *this;
 	  } else if (found) {
 #ifdef DEBUG
@@ -297,11 +298,11 @@ namespace radix_cpp {
       }
       template <bool O>
       bool operator== (const Iterator<O>& o) const noexcept {
-	return depth_ == o.depth_ && start_ == o.start_ && offset_ == o.offset_;
+	return depth_ == o.depth_ && ordinal_ == o.ordinal_ && offset_ == o.offset_;
       }
       template <bool O>
       bool operator!= (const Iterator<O>& o) const noexcept {
-	return depth_ != o.depth_ || start_ != o.start_ || offset_ != o.offset_;
+	return depth_ != o.depth_ || ordinal_ != o.ordinal_ || offset_ != o.offset_;
       }
 
       void fast_forward() {
@@ -321,28 +322,28 @@ namespace radix_cpp {
 
 	auto prefix_key = key_type();
 	while (1) {
-	  size_t start = 0, offset = 0;
-	  size_t h = calc_hash(depth_ + 1, prefix_key, start);
-	  while (start < bucket_count) {
+	  size_t ordinal = 0, offset = 0;
+	  size_t h = calc_hash(depth_ + 1, prefix_key, ordinal);
+	  while (ordinal < bucket_count) {
 	    auto & node = table_->read_node(h, offset);
 	    if (!node.flags) {
-	      start++;
+	      ordinal++;
 	      offset = 0;
-	      h = calc_hash(depth_ + 1, prefix_key, start);
-	    } else if (depth_ + 1 == node.depth && node.prefix_key == prefix_key && top(getFirstConst(node.data)) ==start) {
+	      h = calc_hash(depth_ + 1, prefix_key, ordinal);
+	    } else if (depth_ + 1 == node.depth && node.prefix_key == prefix_key && top(getFirstConst(node.data)) ==ordinal) {
 	      break;
 	    } else {
 	      offset++;
 	    }
 	  }
-	  if (start < bucket_count) {
+	  if (ordinal < bucket_count) {
 	    auto & node = table_->read_node(h, offset);
 	    if (node.prefix_key != prefix_key) {
 	      abort();
 	    }
-	    set_indices(depth_ + 1, prefix_key, start, offset);
+	    set_indices(depth_ + 1, prefix_key, ordinal, offset);
 #ifdef DEBUG
-	    std::cerr << "ff: node key = " << getFirstConst(node.data) << ", depth = " << depth_ << ", prefix_key = " << unordered_key_ << ", start = " << start_ << ", offset = " << offset_ << "\n";
+	    std::cerr << "ff: node key = " << getFirstConst(node.data) << ", depth = " << depth_ << ", prefix_key = " << prefix_key_ << ", ordinal = " << ordinal_ << ", offset = " << offset_ << "\n";
 #endif
 	    if (node.flags & RADIXCPP_FLAG_IS_FINAL) break;
 	    prefix_key = getFirstConst(node.data);
@@ -359,11 +360,11 @@ namespace radix_cpp {
       void down() {
 	if (depth_ <= 1) {
 	  // become an end iterator
-	  start_ = 1;
+	  ordinal_ = 1;
 	  offset_ = depth_ = 0;
 	  return;
 	}
-	size_t h = calc_hash(depth_, unordered_key_, start_);
+	size_t h = calc_hash(depth_, prefix_key_, ordinal_);
 	auto & node = table_->read_node(h, offset_);
 	if (!node.flags) {
 #ifdef DEBG
@@ -380,25 +381,25 @@ namespace radix_cpp {
 	uint32_t depth = depth_ - 1;
 	key_type new_key = node.prefix_key;
 	key_type new_prefix_key = prefix(node.prefix_key, keysize(new_key) - 1); // A Hack
-	size_t start = top(new_key);
+	size_t ordinal = top(new_key);
 	size_t offset = 0;
-	h = calc_hash(depth, new_prefix_key, start);
+	h = calc_hash(depth, new_prefix_key, ordinal);
 #ifdef DEBUG
-	std::cerr << "down(): depth = " << depth_ << ", start = " << start_ << ", offset = " << offset_ << ", key = " << getFirstConst(node.data) << ", prefix = " << node.prefix_key << ", new key = " << new_key << ", new prefix = " << new_prefix_key << ", start = " << start << "\n";
+	std::cerr << "down(): depth = " << depth_ << ", ordinal = " << ordinal_ << ", offset = " << offset_ << ", key = " << getFirstConst(node.data) << ", prefix = " << node.prefix_key << ", new key = " << new_key << ", new prefix = " << new_prefix_key << ", ordinal = " << ordinal << "\n";
 #endif
-	while ( start < bucket_count ) {
+	while ( ordinal < bucket_count ) {
 	  auto & node = table_->read_node(h, offset);
 	  if (!node.flags) {
-	    start++;
+	    ordinal++;
 	    offset = 0;
-	    h = calc_hash(depth, new_prefix_key, start);
+	    h = calc_hash(depth, new_prefix_key, ordinal);
 	  } else if (node.depth != depth || getFirstConst(node.data) != new_key) {
 	    offset++;
 	  } else {
 	    break;
 	  }
 	}
-	if (start == bucket_count) {
+	if (ordinal == bucket_count) {
 #ifdef DEBUG
 	  std::cerr << "down failed\n";
 #endif
@@ -412,14 +413,14 @@ namespace radix_cpp {
 	  abort();
 	}
 #ifdef DEBUG
-	std::cerr << "down(): depth = " << depth << ", prefix = " << new_prefix_key << ", key = " << getFirstConst(node2.data) << ", start = " << start << ", offset = " << offset << "\n";
+	std::cerr << "down(): depth = " << depth << ", prefix = " << new_prefix_key << ", key = " << getFirstConst(node2.data) << ", ordinal = " << ordinal << ", offset = " << offset << "\n";
 #endif
-	set_indices(depth, new_prefix_key, start, offset);
+	set_indices(depth, new_prefix_key, ordinal, offset);
       }
 
       Self * table_;
-      size_t start_, offset_;
-      key_type unordered_key_;
+      size_t ordinal_, offset_;
+      key_type prefix_key_;
       uint32_t depth_;
       size_t table_size_;
     };
@@ -469,22 +470,22 @@ namespace radix_cpp {
     iterator find(const key_type & key) noexcept {
       uint32_t depth = static_cast<uint32_t>(keysize(key));
       auto prefix_key = key_type();
-      size_t start = 0;
+      size_t ordinal = 0;
       if (depth) {
 	prefix_key = prefix(key, depth - 1);
-	start = top(key);
+	ordinal = top(key);
       }
-      size_t offset = 0, h = calc_hash(depth, prefix_key, start);
+      size_t offset = 0, h = calc_hash(depth, prefix_key, ordinal);
 
       while ( 1 ) {
 	auto & node = read_node(h, offset);
 	if (!node.flags) {
 	  break; // not found
-	} else if (node.depth != depth || node.prefix_key != prefix_key || top(getFirstConst(node.data)) != start) {
+	} else if (node.depth != depth || node.prefix_key != prefix_key || top(getFirstConst(node.data)) != ordinal) {
 	  // collision
 	  offset++;
 	} else if (node.flags & RADIXCPP_FLAG_IS_FINAL && getFirstConst(node.data) == key) {
-	  return iterator(this, depth, prefix_key, start, offset);
+	  return iterator(this, depth, prefix_key, ordinal, offset);
 	} else {
 	  break; // not final / wrong key
 	}
@@ -515,12 +516,12 @@ namespace radix_cpp {
       for ( ; depth <= n; depth++) {
 	bool is_final = depth == n;
 	auto key = key_type();
-	size_t start = 0;
+	size_t ordinal = 0;
 	if (depth) {
 	  key = prefix(key0, depth);
-	  start = top(key);
+	  ordinal = top(key);
 	}
-	size_t offset = 0, h = calc_hash(depth, prefix_key, start);
+	size_t offset = 0, h = calc_hash(depth, prefix_key, ordinal);
 
 	while ( 1 ) {
 	  auto & node = read_node(h, offset);
@@ -541,7 +542,7 @@ namespace radix_cpp {
 	    }
 	  }
 #ifdef DEBUG
-	  std::cerr << "  h = " << h << ", key = " << key << ", start = " << start << ", offset = " << offset << ", prefix = " << prefix_key << "\n";
+	  std::cerr << "  h = " << h << ", key = " << key << ", ordinal = " << ordinal << ", offset = " << offset << ", prefix = " << prefix_key << "\n";
 #endif
 	  bool is_new = true;
 	  if (!node.flags) {
@@ -562,7 +563,7 @@ namespace radix_cpp {
 	  node.flags |= is_final ? RADIXCPP_FLAG_IS_FINAL : RADIXCPP_FLAG_HAS_CHILDREN;
 	  if (is_final) {
 	    if (is_new) num_final_entries_++;
-	    return std::make_pair(iterator(this, depth, prefix_key, start, offset), is_new);
+	    return std::make_pair(iterator(this, depth, prefix_key, ordinal, offset), is_new);
 	  } else {
 	    break;
 	  }
@@ -667,12 +668,12 @@ namespace radix_cpp {
 
     // calc_hash() uses Murmur3 to calculate hash for a Node.
     // Murmur3 operations are specialized for both 32 bit and 64 bit size_t
-    static inline size_t calc_hash(uint32_t depth, const key_type & unordered_key, size_t ordered_key) noexcept {
-      auto k1 = murmur3_mix_k1(std::hash<key_type>{}(unordered_key));
+    static inline size_t calc_hash(uint32_t depth, const key_type & prefix_key, size_t ordinal) noexcept {
+      auto k1 = murmur3_mix_k1(std::hash<key_type>{}(prefix_key));
       auto h1 = murmur3_mix_h1(std::size_t{0}, k1);
 
       // FIXME: on 32 bit system, the ordered key is lost
-      k1 = murmur3_mix_k1((ordered_key << 32) | depth);
+      k1 = murmur3_mix_k1((ordinal << 32) | depth);
       h1 = murmur3_mix_h1(h1, k1);
 
       return murmur3_fmix(h1);
