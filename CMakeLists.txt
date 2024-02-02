@@ -15,7 +15,7 @@ endif()
 IF (MSVC)
 
 else()
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native -O3 -Wall -Wsuggest-override -Werror=return-local-addr -Werror=multichar -Werror=enum-compare -Werror=return-type -Werror=conversion-null -Werror=parentheses -Werror=address -Werror=trigraphs -Werror=pointer-arith -Werror=write-strings -Werror=pessimizing-move -Wuninitialized -Wno-unknown-pragmas -Werror=switch -Werror=format -Werror=non-virtual-dtor -Werror=cast-qual -Wconversion -Wsign-conversion -Wsign-promo -I include")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native -O3 -Wall -Wsuggest-override -Werror=return-local-addr -Werror=multichar -Werror=enum-compare -Werror=return-type -Werror=conversion-null -Werror=parentheses -Werror=address -Werror=trigraphs -Werror=pointer-arith -Werror=write-strings -Werror=pessimizing-move -Wuninitialized -Wno-unknown-pragmas -Werror=switch -Werror=format -Werror=non-virtual-dtor -Werror=cast-qual -Wconversion -Wsign-conversion -Wsign-promo")
 	# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")
 	# set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
 endif()
