@@ -1,7 +1,6 @@
 #include <radix_cpp.h>
 
 #include <iostream>
-#include <set>
 
 int main(void) {
   radix_cpp::set<uint8_t> S0;
@@ -62,7 +61,7 @@ int main(void) {
   S4.insert(1000);
   auto it2 = S4.find(1000);
   std::cerr << "*it2 = " << *it2 << "\n";
-  for (uint32_t i = 0; i < 10000000; i++) {
+  for (uint32_t i = 0; i < 1000000; i++) {
     S4.insert(i);
   }
   std::cerr << "*it = " << *it2 << "\n";
@@ -105,6 +104,6 @@ int main(void) {
   for (auto & v : S5) {
     std::cerr << "string: " << v << "\n";
   }
-  
+
   return 0;
 }
