@@ -12,8 +12,8 @@ addressing to implement a radix sort. Ordinarily hash tables are not
 ordered, and while in theory, an order preserving hash function could
 be used, it would lead to large number of collisions. In this
 implementation the key is divided into multiple 8-bit digits, and each
-digit is inserted seperately while preserving the ordering of the
-previous stages.
+digit is inserted seperately along with a prefix key of the previous
+digits in order to presere the ordering of the previous stages.
 
 Iterators are automatically repaired if the underlying table changes,
 so they are stable.
@@ -33,6 +33,20 @@ integers, but more support is forthcoming.
 Iterating over nodes in order can be somewhat expensive if the next
 node has different prefix. Also, it's unclear what the complexity of
 the iteration operation is.
+
+### Benchmarks
+
+In these initial benchmarks, radix_cpp::set has been compared with
+std::set using uint32_t as the key type. The test consists of
+constructing a set out shuffled array of N consecutive integers and
+then iterating over the set. Search speed comparison has been
+intentionally left out, since it would not be very useful given that
+radix-cpp has avarage complexity of O(1). It's clear that iteration is
+very slow when using radix_cpp, but combined insertion and iteration
+speed is still better than that of std::set.
+
+![Insertion Speed](https://github.com/rekola/radix-cpp/assets/6755525/67d12ecf-5dac-4d66-affd-6b74c6d0fe56 "Insertion Speed")
+![Iteration Speed](https://github.com/rekola/radix-cpp/assets/6755525/beefcb14-eaac-4be0-9ef8-e4460dfcfc19 "Iteration Speed")
 
 ## Implementation
 
@@ -84,4 +98,5 @@ To implement set and map for custom type, the following free functions must be d
 | key_type prefix(key_type key, size_t n) | Returns the prefix of n digits of the key |
 | size_t top(key_type key) | Returns the numeric value of the least significant digit of the key |
 | size_t keysize(key_type key) | Returns the number of digits in the key |
-| | A hash function for key_type in std |
+
+Additionally, there must exist a specialization of std::hash for the custom key.
