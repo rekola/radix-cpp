@@ -378,11 +378,11 @@ namespace radix_cpp {
 #endif
 	  abort();
 	}
-	uint32_t depth = depth_ - 1;
-	key_type new_key = node.prefix_key;
-	key_type new_prefix_key = prefix(node.prefix_key, keysize(new_key) - 1); // A Hack
-	size_t ordinal = top(new_key);
-	size_t offset = 0;
+	auto depth = depth_ - 1;
+	auto new_key = node.prefix_key;
+	auto new_prefix_key = depth > 1 ? prefix(node.prefix_key, keysize(new_key) - 1) : key_type(); // A Hack
+	auto ordinal = top(new_key);
+	auto offset = size_t{0};
 	h = calc_hash(depth, new_prefix_key, ordinal);
 #ifdef DEBUG
 	std::cerr << "down(): depth = " << depth_ << ", ordinal = " << ordinal_ << ", offset = " << offset_ << ", key = " << getFirstConst(node.data) << ", prefix = " << node.prefix_key << ", new key = " << new_key << ", new prefix = " << new_prefix_key << ", ordinal = " << ordinal << "\n";
