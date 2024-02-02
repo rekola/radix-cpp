@@ -7,17 +7,17 @@
 ## Radix set and map implementation for C++
 
 radix-cpp is an experimental flat implementation of ordered set and
-map. It provides very fast lookup using a hash table with open
-addressing to implement a form of radix sort combined with prefix
-trees. Ordinarily hash tables are not ordered, and while in theory, an
+map. It uses a hash table with open addressing to implement a form of
+radix sort combined with prefix trees, thus providing Θ(1) search time
+as is usual for hash tables, but also quick in order traversal of the
+keys. Ordinarily hash tables are not ordered, and while in theory, an
 order preserving hash function could be used, it would lead to large
 number of collisions. In this implementation the key is divided into
-multiple 8-bit digits, and each digit is inserted separately. The
-prefix key is also stored along with each digit to allow ordered
-traversal of the prefix tree. According to benchmarks (given uint32_t
+multiple 8-bit digits, and each digit is inserted separately in to the
+hash table. The prefix key is also stored along with each digit to
+construct the prefix tree. According to benchmarks (given uint32_t
 keys) the radix-cpp set construction is much faster than that of
-std::set, and also faster than sorting the keys using
-std::sort. Ordered traversal is also faster than that of std::set.
+std::set, and also faster than sorting the keys using std::sort.
 
 Iterators are automatically repaired if the underlying table changes,
 so they are stable.
@@ -25,6 +25,10 @@ so they are stable.
 Currently only strings and unsigned integers are supported as keys,
 but more support is forthcoming. Also, deletion of keys is not yet
 possible.
+
+There may still be bugs in the implementation. Proper test have not
+yet been created, and there may be issues especially when using
+strings as key.
 
 ### Time Complexity
 
@@ -83,7 +87,7 @@ available in the ordered range, and when advancing to the next stored
 value, we can check them all in order. When the range runs out, we
 fall back to the previous digit and advance that one. If the new node
 is not a final node, we go upwards in the tree and find the smallest
-final node.
+final node. The offset is used for probing in case of collisions.
 
 ### Limitations and Future Plans
 
