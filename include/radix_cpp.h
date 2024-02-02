@@ -1,14 +1,9 @@
 #ifndef _RADIXCPP_H_
 #define _RADIXCPP_H_
 
-#include <iterator>
-#include <cstddef>
 #include <cstdint>
 #include <utility>
-#include <vector>
-#include <limits>
-#include <functional>
-#include <cstring>
+#include <string>
 
 #define RADIXCPP_FLAG_IS_ASSIGNED	1
 #define RADIXCPP_FLAG_IS_FINAL		2
