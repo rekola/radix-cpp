@@ -32,6 +32,26 @@ namespace radix_cpp {
     return n_digits == 0 ? 0 : n_digits >= sizeof(key) ? key : (key >> ((sizeof(key) - n_digits) * 8));
   }
 
+  static inline float prefix(float key, size_t n_digits) noexcept {
+    union {
+      float f;
+      uint32_t i;
+    } u;
+    u.f = key;
+    u.i = prefix(u.i, n_digits);
+    return u.f;
+  }
+
+  static inline double prefix(double key, size_t n_digits) noexcept {
+    union {
+      double f;
+      uint64_t i;
+    } u;
+    u.f = key;
+    u.i = prefix(u.i, n_digits);
+    return u.f;
+  }
+
   static inline std::string prefix(const std::string & key, size_t n_digits) noexcept {
     return n_digits >= key.size() ? key : key.substr(0, n_digits);
   }
@@ -52,6 +72,24 @@ namespace radix_cpp {
     return key & 0xff;
   }
 
+  static inline size_t top(float key) noexcept {
+    union {
+      float f;
+      uint32_t i;
+    } u;
+    u.f = key;
+    return u.i & 0xff;
+  }
+
+  static inline size_t top(double key) noexcept {
+    union {
+      double f;
+      uint64_t i;
+    } u;
+    u.f = key;
+    return u.i & 0xff;
+  }
+
   static inline size_t top(const std::string & key) noexcept {
     return key.empty() ? 0 : static_cast<unsigned char>(key.back());
   }
@@ -70,6 +108,14 @@ namespace radix_cpp {
 
   static inline size_t keysize(uint64_t key) noexcept {
     return sizeof(key);
+  }
+
+  static inline size_t keysize(float key) noexcept {
+    return sizeof(float);
+  }
+
+  static inline size_t keysize(double key) noexcept {
+    return sizeof(float);
   }
 
   static inline size_t keysize(const std::string & key) noexcept {
@@ -672,8 +718,7 @@ namespace radix_cpp {
       auto k1 = murmur3_mix_k1(std::hash<key_type>{}(prefix_key));
       auto h1 = murmur3_mix_h1(std::size_t{0}, k1);
 
-      // FIXME: on 32 bit system, the ordered key is lost
-      k1 = murmur3_mix_k1((ordinal << 32) | depth);
+      k1 = murmur3_mix_k1((static_cast<size_t>(depth) << 8) | ordinal);
       h1 = murmur3_mix_h1(h1, k1);
 
       return murmur3_fmix(h1);
