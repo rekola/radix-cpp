@@ -25,11 +25,6 @@ jobs:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v3
 
-      # Compile
-      - name: Configure
-        run: |
-          sudo apt install catch2
-
       # Build
       - name: Build
         run: |

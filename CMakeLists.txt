@@ -19,8 +19,13 @@ else()
 	# set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
 endif()
 
-find_package(Catch2 2 REQUIRED)
-# These tests can use the Catch2-provided main
+include(FetchContent)
+FetchContent_Declare(Catch2
+  QUIET
+  URL https://github.com/catchorg/Catch2/archive/v2.13.4.tar.gz
+)
+FetchContent_MakeAvailable(Catch2)
+
 add_executable(tests tests/test.cpp)
 target_link_libraries(tests PRIVATE Catch2::Catch2WithMain)
 target_include_directories(tests PRIVATE include)
