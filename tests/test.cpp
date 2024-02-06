@@ -106,20 +106,17 @@ TEST_CASE( "empty string can be added to set and found", "[empty_string_set]" ) 
 TEST_CASE( "shared prefixes work with strings", "[string_set_shared_prefix]" ) {
   radix_cpp::set<std::string> S;
   S.insert("@");
-  S.insert("a");
-  S.insert("ab");
   S.insert("abc");
-  S.insert("abcd");
-  S.insert("abcde");
-  S.insert("abcdef");
+  S.insert("ab");
+  S.insert("a");
+  S.insert("");
+  REQUIRE(S.size() == 5);
   auto it = S.begin();
+  REQUIRE(*it++ == "");
   REQUIRE(*it++ == "@");
   REQUIRE(*it++ == "a");
   REQUIRE(*it++ == "ab");
   REQUIRE(*it++ == "abc");
-  REQUIRE(*it++ == "abcd");
-  REQUIRE(*it++ == "abcde");
-  REQUIRE(*it++ == "abcdef");
   REQUIRE(it == S.end());
 }
 

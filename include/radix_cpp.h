@@ -605,7 +605,7 @@ namespace radix_cpp {
 	    node.hash = h;
 	    num_entries_++;
 	  } else if (is_final) {
-	    is_new = false;
+	    if (node.flags & RADIXCPP_FLAG_IS_FINAL) is_new = false;
 	    node.data = vt; // update data
 	  }
 	  node.flags |= is_final ? RADIXCPP_FLAG_IS_FINAL : RADIXCPP_FLAG_HAS_CHILDREN;
