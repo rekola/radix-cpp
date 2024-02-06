@@ -186,3 +186,15 @@ TEST_CASE( "map assignment", "[assignment]" ) {
   REQUIRE(M["Hello"] == true);
   REQUIRE(M.size() == 1);
 }
+
+TEST_CASE( "move construction and assign", "[move_construct_assign]" ) {
+  radix_cpp::set<std::string> S0;
+  S0.insert("AB");
+  S0.insert("ABC");
+  REQUIRE(S0.size() == 2);
+  auto S1(std::move(S0));
+  auto S2 = std::move(S1);
+  REQUIRE(S0.size() == 0);
+  REQUIRE(S1.size() == 0);
+  REQUIRE(S2.size() == 2);
+}

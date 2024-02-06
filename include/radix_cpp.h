@@ -481,7 +481,7 @@ namespace radix_cpp {
 	num_inserts_(std::exchange(other.num_inserts_, 0)),
 	num_insert_collisions_(std::exchange(other.num_insert_collisions_, 0)),
 	data_size_(std::exchange(other.data_size_, 0)),
-	data_(std::exchange(other.data, NULL)) { }
+	data_(std::exchange(other.data_, nullptr)) { }
 
     Table & operator=(Table && other) noexcept {
       std::swap(num_entries_, other.num_entries);
