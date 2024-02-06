@@ -595,10 +595,11 @@ namespace radix_cpp {
 	  if (!node.flags) {
 	    if (is_final) {
 	      new (static_cast<void*>(&(node.data))) value_type(vt);
+	      new (static_cast<void*>(&(node.prefix_key))) key_type(prefix_key);
 	    } else {
 	      new (static_cast<void*>(&(node.data))) value_type(mk_value_from_key(key));
+	      new (static_cast<void*>(&(node.prefix_key))) key_type(std::move(prefix_key));
 	    }
-	    new (static_cast<void*>(&(node.prefix_key))) key_type(std::move(prefix_key));
 	    node.flags = RADIXCPP_FLAG_IS_ASSIGNED;
 	    node.depth = depth;
 	    node.hash = h;
@@ -610,7 +611,7 @@ namespace radix_cpp {
 	  node.flags |= is_final ? RADIXCPP_FLAG_IS_FINAL : RADIXCPP_FLAG_HAS_CHILDREN;
 	  if (is_final) {
 	    if (is_new) num_final_entries_++;
-	    return std::make_pair(iterator(this, depth, prefix_key, ordinal, offset), is_new);
+	    return std::make_pair(iterator(this, depth, std::move(prefix_key), ordinal, offset), is_new);
 	  } else {
 	    break;
 	  }

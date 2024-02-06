@@ -162,3 +162,27 @@ TEST_CASE( "empty map find", "[empty_find]" ) {
   auto it = M.find("Hello");
   REQUIRE(it == M.end());
 }
+
+TEST_CASE( "updating iterators", "[iter_update]" ) {
+  radix_cpp::map<std::string, int> M;
+  M["A"] = 1;
+  auto it = M.find("A");
+  REQUIRE(it->second == 1);
+  it->second = 2;
+  REQUIRE(M["A"] == 2);
+}
+
+TEST_CASE( "updating inserted", "[inserted_update]" ) {
+  radix_cpp::map<std::string, int> M;
+  auto [ it, is_new ] = M.insert(std::pair("Hello", 10));
+  REQUIRE(M["Hello"] == 10);
+  it->second = 11;
+  REQUIRE(M["Hello"] == 11);
+}
+
+TEST_CASE( "map assignment", "[assignment]" ) {
+  radix_cpp::map<std::string, bool> M;
+  M["Hello"] = true;
+  REQUIRE(M["Hello"] == true);
+  REQUIRE(M.size() == 1);
+}
