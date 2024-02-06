@@ -514,6 +514,7 @@ namespace radix_cpp {
     }
 
     iterator find(const key_type & key) noexcept {
+      if (!data_size_) return end();
       uint32_t depth = static_cast<uint32_t>(keysize(key));
       auto prefix_key = key_type();
       size_t ordinal = 0;
