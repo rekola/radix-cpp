@@ -24,10 +24,9 @@ jobs:
         run: |
           git clone https://github.com/Microsoft/vcpkg.git
           cd vcpkg
-          ./bootstrap-vcpkg.sh
-          ./vcpkg integrate install
-          ./vcpkg install catch2
-          cd ..
+          ./vcpkg/bootstrap-vcpkg.sh
+          vcpkg integrate install
+          vcpkg install catch2
           mkdir build
           cd build && cmake -G "${{matrix.gen}}" -A ${{matrix.arch}}  ..
       - name: Build
