@@ -1,6 +1,4 @@
-#define CATCH_CONFIG_MAIN
-#define CATCH_CONFIG_ENABLE_BENCHMARKING
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 
 #include "radix_cpp.h"
 
@@ -94,7 +92,7 @@ TEST_CASE( "empty string can be added to set", "[empty_string_set]" ) {
   REQUIRE(it == S.end());
 }
 
-TEST_CASE( "shared prefixes work with strings", "[string_set_shared_prefix" ) {
+TEST_CASE( "shared prefixes work with strings", "[string_set_shared_prefix]" ) {
   radix_cpp::set<std::string> S;
   S.insert("@");
   S.insert("a");
@@ -128,4 +126,13 @@ TEST_CASE( "positive floating point keys", "[pos_float_set]") {
   REQUIRE(*it++ == 1000.0f);
   REQUIRE(*it++ == 30000000.0f);
   REQUIRE(it == S.end());
+}
+
+TEST_CASE(" empty set or map iteration doesn't fail", "[empty]") {
+  radix_cpp::set<uint8_t> S;
+  radix_cpp::map<uint16_t, std::string> M;
+  auto it1 = S.begin();
+  auto it2 = M.begin();
+  REQUIRE(it1 == S.end());
+  REQUIRE(it2 == M.end());
 }
