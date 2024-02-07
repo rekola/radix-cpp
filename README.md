@@ -26,10 +26,6 @@ Currently only strings and unsigned integers are supported as keys,
 but more support is forthcoming. Also, deletion of keys is not yet
 possible.
 
-There may still be bugs in the implementation. Proper test have not
-yet been created, and there may be issues especially when using
-strings as key.
-
 ### Time Complexity
 
 | Operation | Average | Worst Case |
@@ -94,7 +90,7 @@ final node. The offset is used for probing in case of collisions.
 - Maximum key length is 2^32
 - Deletion is not yet implemented
 - No signed types (digits of two's complement numbers are not ordered correctly)
-- No 32-bit support
+- 32-bit support is untested
 - How to sort std::any?
 - Unordered iteration is need (e.g. for set union and intersection)
 
