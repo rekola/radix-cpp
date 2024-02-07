@@ -245,3 +245,11 @@ TEST_CASE( "at works correctly", "[at]") {
   REQUIRE(M.at("s1") == 1);
   REQUIRE_THROWS_AS( M.at("s2"), std::out_of_range);
 }
+
+TEST_CASE( "insert_or_assign works", "[insert_or_assign]") {
+  radix_cpp::map<std::string, int> M;
+  M.insert_or_assign("key", 1);
+  REQUIRE(M["key"] == 1);
+  M.insert_or_assign("key", 2);
+  REQUIRE(M["key"] == 2);
+}

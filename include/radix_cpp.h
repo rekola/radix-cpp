@@ -403,6 +403,8 @@ namespace radix_cpp {
 	}
       }
 
+      size_t get_offset() const { return offset_; }
+
     private:
       void down() {
 	if (depth_ <= 1) {
@@ -540,93 +542,43 @@ namespace radix_cpp {
       }
       return end();
     }
+    
+    template <typename Q = mapped_type>
+    typename std::enable_if<!std::is_void<Q>::value, std::pair<iterator,bool>>::type insert_or_assign(const Key& k, Q && obj) {
+      auto [ it, hash ] = create_nodes_for_key(k);
+      auto & node = read_node(hash, it.get_offset());
+      bool is_new = true;
+      if (!(node.flags & flag_is_assigned)) {
+	new (static_cast<void*>(&(node.data))) value_type(k, std::move(obj));
+	node.flags = flag_is_assigned;
+      } else if (!(node.flags & flag_is_final)) {
+	node.flags |= flag_is_final;
+	node.data = value_type(k, std::move(obj)); // node exists, but it is not final: update the data
+      } else {
+	node.data = value_type(k, std::move(obj)); // node exists, and is final: update the data
+	is_new = false;
+      }
+      node.flags |= flag_is_final;
+      return std::make_pair(it, is_new);
+    }
 
     template <typename... Args>
     std::pair<iterator,bool> emplace(Args&&... args) {
       value_type vt{std::forward<Args>(args)...};
-
-      if (!data_) {
-	init(bucket_count);
-      } else if (10 * num_entries_ / data_size_ >= max_load_factor) { // Check the load factor
-	resize(data_size_ * 2);
+      auto [ it, hash ] = create_nodes_for_key(getFirstConst(vt));
+      auto & node = read_node(hash, it.get_offset());
+      bool is_new = true;
+      if (!(node.flags & flag_is_assigned)) {
+	new (static_cast<void*>(&(node.data))) value_type(std::move(vt));
+	node.flags = flag_is_assigned;
+      } else if (!(node.flags & flag_is_final)) {
+	node.flags |= flag_is_final;
+	node.data = std::move(vt); // node exists, but it is not final: update data
+      } else {
+	is_new = false;
       }
-
-      auto & key0 = getFirstConst(vt);
-      auto prefix_key = key_type();
-      
-      num_inserts_++;
-
-      // for empty key, start from depth of 0
-      uint32_t n = static_cast<uint32_t>(keysize(key0));
-      uint32_t depth = n == 0 ? 0 : 1;
-
-#ifdef DEBUG
-	std::cerr << "inserting node " << key0 << "\n";
-#endif
-      
-      for ( ; depth <= n; depth++) {
-	bool is_final = depth == n;
-	auto key = key_type();
-	size_t ordinal = 0;
-	if (depth) {
-	  key = prefix(key0, depth);
-	  ordinal = top(key);
-	}
-	size_t offset = 0, h = calc_hash(depth, prefix_key, ordinal);
-
-	while ( 1 ) {
-	  auto & node = read_node(h, offset);
-	  if (node.flags) {
-	    if (node.depth == depth && node.prefix_key == prefix_key) {
-	      if (getFirstConst(node.data) != key) {
-		num_insert_collisions_++;
-		offset++;
-		continue;
-	      } else {
-		// already inserted
-	      }
-	    } else {
-	      // collision
-	      offset++;
-	      num_insert_collisions_++;
-	      continue;
-	    }
-	  }
-#ifdef DEBUG
-	  std::cerr << "  h = " << h << ", key = " << key << ", ordinal = " << ordinal << ", offset = " << offset << ", prefix = " << prefix_key << "\n";
-#endif
-	  bool is_new = true;
-	  if (!node.flags) {
-	    if (is_final) {
-	      new (static_cast<void*>(&(node.data))) value_type(std::move(vt));
-	      new (static_cast<void*>(&(node.prefix_key))) key_type(prefix_key);
-	    } else {
-	      new (static_cast<void*>(&(node.data))) value_type(mk_value_from_key(key));
-	      new (static_cast<void*>(&(node.prefix_key))) key_type(std::move(prefix_key));
-	    }
-	    node.flags = flag_is_assigned;
-	    node.depth = depth;
-	    node.hash = h;
-	    num_entries_++;
-	  } else if (is_final && !(node.flags & flag_is_final)) {
-	    node.data = vt; // node exists, but it is not final: update data
-	  } else {
-	    is_new = false;
-	  }
-	  node.flags |= is_final ? flag_is_final : flag_has_children;
-	  if (is_final) {
-	    if (is_new) num_final_entries_++;
-	    return std::make_pair(iterator(this, depth, std::move(prefix_key), ordinal, offset), is_new);
-	  } else {
-	    break;
-	  }
-	}
-
-	prefix_key = std::move(key);
-      }
-
-      // error
-      return std::make_pair(end(), false);
+      node.flags |= flag_is_final;
+      return std::make_pair(it, is_new);
     }
 
     std::pair<iterator, bool> insert(const value_type& keyval) {
@@ -682,6 +634,86 @@ namespace radix_cpp {
     size_t num_insert_collisions() const noexcept { return num_insert_collisions_; }
     
   private:
+    std::pair<iterator, size_t> create_nodes_for_key(const key_type & key0) {
+      if (!data_) {
+	init(bucket_count);
+      } else if (10 * num_entries_ / data_size_ >= max_load_factor) { // Check the load factor
+	resize(data_size_ * 2);
+      }
+
+      auto prefix_key = key_type();
+      num_inserts_++;
+
+      // for empty key, start from depth of 0
+      uint32_t n = static_cast<uint32_t>(keysize(key0));
+      uint32_t depth = n == 0 ? 0 : 1;
+
+#ifdef DEBUG
+      std::cerr << "inserting node " << key0 << "\n";
+#endif
+      
+      for ( ; depth <= n; depth++) {
+	bool is_final = depth == n;
+	auto key = key_type();
+	size_t ordinal = 0;
+	if (depth) {
+	  key = prefix(key0, depth);
+	  ordinal = top(key);
+	}
+	size_t offset = 0, h = calc_hash(depth, prefix_key, ordinal);
+	
+	while ( 1 ) {
+	  auto & node = read_node(h, offset);
+	  if (node.flags) {
+	    if (node.depth == depth && node.prefix_key == prefix_key) {
+	      if (getFirstConst(node.data) != key) {
+		num_insert_collisions_++;
+		offset++;
+		continue;
+	      } else {
+		// already inserted
+	      }
+	    } else {
+	      // collision
+	      offset++;
+	      num_insert_collisions_++;
+	      continue;
+	    }
+	  }
+#ifdef DEBUG
+	  std::cerr << "  h = " << h << ", key = " << key << ", ordinal = " << ordinal << ", offset = " << offset << ", prefix = " << prefix_key << "\n";
+#endif
+	  bool is_new = true;
+	  if (!node.flags) {
+	    if (is_final) {
+	      new (static_cast<void*>(&(node.prefix_key))) key_type(prefix_key);
+	    } else {
+	      new (static_cast<void*>(&(node.data))) value_type(mk_value_from_key(key));
+	      new (static_cast<void*>(&(node.prefix_key))) key_type(std::move(prefix_key));
+	      node.flags = flag_is_assigned | flag_has_children;
+	    }
+	    node.depth = depth;
+	    node.hash = h;
+	    num_entries_++;
+	  } else if (is_final && !(node.flags & flag_is_final)) {
+	    // node.data = vt; // node exists, but it is not final: update data
+	  } else {
+	    is_new = false;
+	  }
+	  if (is_final) {
+	    if (is_new) num_final_entries_++;
+	    return std::pair(iterator(this, depth, std::move(prefix_key), ordinal, offset), h);
+	  } else {
+	    break;
+	  }
+	}
+
+	prefix_key = std::move(key);
+      }
+
+      // error
+      return std::pair(end(), 0);
+    }
     // getFirstConst returns the key from value_type for either set or map
     // This version is for sets, where value_type == key_type
     static key_type const& getFirstConst(key_type const& k) noexcept {
