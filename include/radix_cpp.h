@@ -604,9 +604,10 @@ namespace radix_cpp {
 	    node.depth = depth;
 	    node.hash = h;
 	    num_entries_++;
-	  } else if (is_final) {
-	    if (node.flags & RADIXCPP_FLAG_IS_FINAL) is_new = false;
-	    node.data = vt; // update data
+	  } else if (is_final && !(node.flags & RADIXCPP_FLAG_IS_FINAL)) {
+	    node.data = vt; // node exists, but it is not final: update data
+	  } else {
+	    is_new = false;
 	  }
 	  node.flags |= is_final ? RADIXCPP_FLAG_IS_FINAL : RADIXCPP_FLAG_HAS_CHILDREN;
 	  if (is_final) {

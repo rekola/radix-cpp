@@ -195,3 +195,17 @@ TEST_CASE( "move construction and assign", "[move_construct_assign]" ) {
   REQUIRE(S1.size() == 0);
   REQUIRE(S2.size() == 2);
 }
+
+TEST_CASE( "insert doesn't overwrite", "[insert_no_overwrite]" ) {
+  radix_cpp::map<std::string, int> M;
+  auto [ it1, inserted1 ] = M.insert(std::pair("abc", 1));
+  auto [ it2, inserted2 ] = M.insert(std::pair("ab", 1));
+  auto [ it3, inserted3 ] = M.insert(std::pair("ab", 2));
+  REQUIRE(it1->second == 1);
+  REQUIRE(inserted1 == true);
+  REQUIRE(it2->second == 1);
+  REQUIRE(inserted2 == true);
+  REQUIRE(it3->second == 1);
+  REQUIRE(inserted3 == false);
+  REQUIRE(M.size() == 2);
+}
