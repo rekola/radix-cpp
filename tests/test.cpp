@@ -232,9 +232,16 @@ TEST_CASE( "emplace with set", "[emplace_set]") {
 }
 
 TEST_CASE( "emplace with map", "[emplace_map]") {
-  radix_cpp::map<std::string, bool> S;
-  S.emplace("a string", true);
-  S.emplace("another string", true);
-  REQUIRE(S["a string"] == true);
-  REQUIRE(S["another string"] == true);
+  radix_cpp::map<std::string, bool> M;
+  M.emplace("a string", true);
+  M.emplace("another string", true);
+  REQUIRE(M["a string"] == true);
+  REQUIRE(M["another string"] == true);
+}
+
+TEST_CASE( "at works correctly", "[at]") {
+  radix_cpp::map<std::string, int> M;
+  M.emplace("s1", 1);
+  REQUIRE(M.at("s1") == 1);
+  REQUIRE_THROWS_AS( M.at("s2"), std::out_of_range);
 }

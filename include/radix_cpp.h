@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <utility>
 #include <string>
+#include <stdexcept>
+
 
 #define RADIXCPP_FLAG_IS_ASSIGNED	1
 #define RADIXCPP_FLAG_IS_FINAL		2
@@ -649,6 +651,16 @@ namespace radix_cpp {
       } else {
 	auto [ it, is_new ] = insert(std::pair(key, mapped_type()));
 	return it->second;
+      }
+    }
+
+    template <typename Q = mapped_type>
+    typename std::enable_if<!std::is_void<Q>::value, Q&>::type at(const key_type& key) {
+      auto it = find(key);
+      if (it != end()) {
+	return it->second;
+      } else {
+	throw std::out_of_range("key not found");
       }
     }
 
