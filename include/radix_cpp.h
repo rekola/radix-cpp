@@ -540,7 +540,10 @@ namespace radix_cpp {
       return end();
     }
 
-    std::pair<iterator,bool> insert(const value_type& vt) {
+    template <typename... Args>
+    std::pair<iterator,bool> emplace(Args&&... args) {
+      value_type vt{std::forward<Args>(args)...};
+
       if (!data_) {
 	init(bucket_count);
       } else if (10 * num_entries_ / data_size_ >= max_load_factor) { // Check the load factor
@@ -594,7 +597,7 @@ namespace radix_cpp {
 	  bool is_new = true;
 	  if (!node.flags) {
 	    if (is_final) {
-	      new (static_cast<void*>(&(node.data))) value_type(vt);
+	      new (static_cast<void*>(&(node.data))) value_type(std::move(vt));
 	      new (static_cast<void*>(&(node.prefix_key))) key_type(prefix_key);
 	    } else {
 	      new (static_cast<void*>(&(node.data))) value_type(mk_value_from_key(key));
@@ -623,6 +626,19 @@ namespace radix_cpp {
 
       // error
       return std::make_pair(end(), false);
+    }
+
+    std::pair<iterator, bool> insert(const value_type& keyval) {
+      return emplace(keyval);
+    }
+
+    std::pair<iterator, bool> insert(value_type&& keyval) {
+      return emplace(std::move(keyval));
+    }
+
+    iterator insert(const_iterator hint, const value_type& keyval) {
+      (void)hint;
+      return emplace(keyval).first;
     }
 
     template <typename Q = mapped_type>

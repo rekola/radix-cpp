@@ -209,3 +209,32 @@ TEST_CASE( "insert doesn't overwrite", "[insert_no_overwrite]" ) {
   REQUIRE(inserted3 == false);
   REQUIRE(M.size() == 2);
 }
+
+TEST_CASE( "insert with move semantics", "[insert_move]") {
+  radix_cpp::set<std::string> S;
+  std::string s = "This string is very long!!!!!!!!!!";
+  S.insert(std::move(s));
+  REQUIRE(s.empty());
+  REQUIRE(S.size() == 1);
+  auto it = S.begin();
+  REQUIRE(*it++ == "This string is very long!!!!!!!!!!");
+  REQUIRE(it == S.end());
+}
+
+TEST_CASE( "emplace with set", "[emplace_set]") {
+  radix_cpp::set<std::string> S;
+  S.emplace("a string");
+  S.emplace("another string");
+  auto it = S.begin();
+  REQUIRE(*it++ == "a string");
+  REQUIRE(*it++ == "another string");
+  REQUIRE(it == S.end());
+}
+
+TEST_CASE( "emplace with map", "[emplace_map]") {
+  radix_cpp::map<std::string, bool> S;
+  S.emplace("a string", true);
+  S.emplace("another string", true);
+  REQUIRE(S["a string"] == true);
+  REQUIRE(S["another string"] == true);
+}
