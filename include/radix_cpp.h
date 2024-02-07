@@ -6,11 +6,6 @@
 #include <string>
 #include <stdexcept>
 
-
-#define RADIXCPP_FLAG_IS_ASSIGNED	1
-#define RADIXCPP_FLAG_IS_FINAL		2
-#define RADIXCPP_FLAG_HAS_CHILDREN	4
-
 // #define DEBUG
 
 #ifdef DEBUG
@@ -18,6 +13,10 @@
 #endif
 
 namespace radix_cpp {
+  inline constexpr uint32_t flag_is_assigned = 1;
+  inline constexpr uint32_t flag_is_final = 2;
+  inline constexpr uint32_t flag_has_children = 4;
+  
   inline uint8_t prefix(uint8_t key, size_t n_digits) noexcept {
     return n_digits == 0 ? 0 : key;
   }
@@ -265,7 +264,7 @@ namespace radix_cpp {
 
 	  while ( 1 ) {
 	    auto & node = table_->read_node(h, offset_);
-	    if (node.flags & RADIXCPP_FLAG_IS_ASSIGNED &&
+	    if (node.flags & flag_is_assigned &&
 		node.depth == depth_ && node.prefix_key == prefix_key_ &&
 		top(getFirstConst(node.data)) == ordinal_) {
 	      break;
@@ -288,7 +287,7 @@ namespace radix_cpp {
 	  } else {
 	    size_t h = calc_hash(depth, prefix, ordinal);
 	    auto & node = table_->read_node(h, offset);
-	    if (node.flags & RADIXCPP_FLAG_IS_FINAL && node.flags & RADIXCPP_FLAG_HAS_CHILDREN) {
+	    if (node.flags & flag_is_final && node.flags & flag_has_children) {
 	      depth++;
 	      prefix = getFirstConst(node.data);
 	      ordinal = 0;
@@ -312,7 +311,7 @@ namespace radix_cpp {
 	      continue;
 	    }
 	    found = true;
-	    if (node.flags & RADIXCPP_FLAG_IS_FINAL) {
+	    if (node.flags & flag_is_final) {
 	      break;
 	    } else {
 	      depth++;
@@ -393,7 +392,7 @@ namespace radix_cpp {
 #ifdef DEBUG
 	    std::cerr << "ff: node key = " << getFirstConst(node.data) << ", depth = " << depth_ << ", prefix_key = " << prefix_key_ << ", ordinal = " << ordinal_ << ", offset = " << offset_ << "\n";
 #endif
-	    if (node.flags & RADIXCPP_FLAG_IS_FINAL) break;
+	    if (node.flags & flag_is_final) break;
 	    prefix_key = getFirstConst(node.data);
 	  } else {
 #ifdef DEBUG
@@ -533,7 +532,7 @@ namespace radix_cpp {
 	} else if (node.depth != depth || node.prefix_key != prefix_key || top(getFirstConst(node.data)) != ordinal) {
 	  // collision
 	  offset++;
-	} else if (node.flags & RADIXCPP_FLAG_IS_FINAL && getFirstConst(node.data) == key) {
+	} else if (node.flags & flag_is_final && getFirstConst(node.data) == key) {
 	  return iterator(this, depth, prefix_key, ordinal, offset);
 	} else {
 	  break; // not final / wrong key
@@ -605,16 +604,16 @@ namespace radix_cpp {
 	      new (static_cast<void*>(&(node.data))) value_type(mk_value_from_key(key));
 	      new (static_cast<void*>(&(node.prefix_key))) key_type(std::move(prefix_key));
 	    }
-	    node.flags = RADIXCPP_FLAG_IS_ASSIGNED;
+	    node.flags = flag_is_assigned;
 	    node.depth = depth;
 	    node.hash = h;
 	    num_entries_++;
-	  } else if (is_final && !(node.flags & RADIXCPP_FLAG_IS_FINAL)) {
+	  } else if (is_final && !(node.flags & flag_is_final)) {
 	    node.data = vt; // node exists, but it is not final: update data
 	  } else {
 	    is_new = false;
 	  }
-	  node.flags |= is_final ? RADIXCPP_FLAG_IS_FINAL : RADIXCPP_FLAG_HAS_CHILDREN;
+	  node.flags |= is_final ? flag_is_final : flag_has_children;
 	  if (is_final) {
 	    if (is_new) num_final_entries_++;
 	    return std::make_pair(iterator(this, depth, std::move(prefix_key), ordinal, offset), is_new);
@@ -720,7 +719,7 @@ namespace radix_cpp {
       size_t collisions = 0;
       for (size_t i = 0; i < data_size_; i++) {
 	Node & node = data_[i];
-	if (node.flags & RADIXCPP_FLAG_IS_ASSIGNED) {
+	if (node.flags) {
 	  size_t offset = 0;
 	  while ( 1 ) {
 	    Node & output_node = new_table.read_node(node.hash, offset);
