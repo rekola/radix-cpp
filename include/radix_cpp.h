@@ -18,23 +18,23 @@
 #endif
 
 namespace radix_cpp {
-  static inline uint8_t prefix(uint8_t key, size_t n_digits) noexcept {
+  inline uint8_t prefix(uint8_t key, size_t n_digits) noexcept {
     return n_digits == 0 ? 0 : key;
   }
 
-  static inline uint16_t prefix(uint16_t key, size_t n_digits) noexcept {
+  inline uint16_t prefix(uint16_t key, size_t n_digits) noexcept {
     return n_digits == 0 ? 0 : n_digits >= sizeof(key) ? key : (key >> ((sizeof(key) - n_digits) * 8));
   }
 
-  static inline uint32_t prefix(uint32_t key, size_t n_digits) noexcept {
+  inline uint32_t prefix(uint32_t key, size_t n_digits) noexcept {
     return n_digits == 0 ? 0 : n_digits >= sizeof(key) ? key : (key >> ((sizeof(key) - n_digits) * 8));
   }
 
-  static inline uint64_t prefix(uint64_t key, size_t n_digits) noexcept {
+  inline uint64_t prefix(uint64_t key, size_t n_digits) noexcept {
     return n_digits == 0 ? 0 : n_digits >= sizeof(key) ? key : (key >> ((sizeof(key) - n_digits) * 8));
   }
 
-  static inline float prefix(float key, size_t n_digits) noexcept {
+  inline float prefix(float key, size_t n_digits) noexcept {
     union {
       float f;
       uint32_t i;
@@ -44,7 +44,7 @@ namespace radix_cpp {
     return u.f;
   }
 
-  static inline double prefix(double key, size_t n_digits) noexcept {
+  inline double prefix(double key, size_t n_digits) noexcept {
     union {
       double f;
       uint64_t i;
@@ -54,27 +54,27 @@ namespace radix_cpp {
     return u.f;
   }
 
-  static inline std::string prefix(const std::string & key, size_t n_digits) noexcept {
+  inline std::string prefix(const std::string & key, size_t n_digits) noexcept {
     return n_digits >= key.size() ? key : key.substr(0, n_digits);
   }
 
-  static inline size_t top(uint8_t key) noexcept {
+  inline size_t top(uint8_t key) noexcept {
     return key;
   }
 
-  static inline size_t top(uint16_t key) noexcept {
+  inline size_t top(uint16_t key) noexcept {
     return key & 0xff;
   }
 
-  static inline size_t top(uint32_t key) noexcept {
+  inline size_t top(uint32_t key) noexcept {
     return key & 0xff;
   }
 
-  static inline size_t top(uint64_t key) noexcept {
+  inline size_t top(uint64_t key) noexcept {
     return key & 0xff;
   }
 
-  static inline size_t top(float key) noexcept {
+  inline size_t top(float key) noexcept {
     union {
       float f;
       uint32_t i;
@@ -83,7 +83,7 @@ namespace radix_cpp {
     return u.i & 0xff;
   }
 
-  static inline size_t top(double key) noexcept {
+  inline size_t top(double key) noexcept {
     union {
       double f;
       uint64_t i;
@@ -92,35 +92,35 @@ namespace radix_cpp {
     return u.i & 0xff;
   }
 
-  static inline size_t top(const std::string & key) noexcept {
+  inline size_t top(const std::string & key) noexcept {
     return key.empty() ? 0 : static_cast<unsigned char>(key.back());
   }
 
-  static inline size_t keysize(uint8_t key) noexcept {
+  inline size_t keysize(uint8_t key) noexcept {
     return sizeof(key);
   }
 
-  static inline size_t keysize(uint16_t key) noexcept {
+  inline size_t keysize(uint16_t key) noexcept {
     return sizeof(key);
   }
 
-  static inline size_t keysize(uint32_t key) noexcept {
+  inline size_t keysize(uint32_t key) noexcept {
     return sizeof(key);
   }
 
-  static inline size_t keysize(uint64_t key) noexcept {
+  inline size_t keysize(uint64_t key) noexcept {
     return sizeof(key);
   }
 
-  static inline size_t keysize(float key) noexcept {
+  inline size_t keysize(float key) noexcept {
     return sizeof(float);
   }
 
-  static inline size_t keysize(double key) noexcept {
+  inline size_t keysize(double key) noexcept {
     return sizeof(float);
   }
 
-  static inline size_t keysize(const std::string & key) noexcept {
+  inline size_t keysize(const std::string & key) noexcept {
     return key.size();
   }
 
@@ -129,17 +129,17 @@ namespace radix_cpp {
   */
 
   template<typename T, typename std::enable_if<sizeof(T) == 4>::type* = nullptr>
-  static inline T rotl(T x, int_fast8_t r) noexcept {
+  inline T rotl(T x, int_fast8_t r) noexcept {
     return (x << r) | (x >> (32 - r));
   }
 
   template<typename T, typename std::enable_if<sizeof(T) == 8>::type* = nullptr>
-  static inline T rotl(T x, int_fast8_t r) noexcept {
+  inline T rotl(T x, int_fast8_t r) noexcept {
     return (x << r) | (x >> (64 - r));
   }
 
   template<typename T, typename std::enable_if<sizeof(T) == 4>::type* = nullptr>
-  static inline T murmur3_mix_k1(T k1) noexcept {
+  inline T murmur3_mix_k1(T k1) noexcept {
     k1 *= 0xcc9e2d51;
     k1 = rotl(k1, 15);
     k1 *= 0x1b873593;
@@ -147,7 +147,7 @@ namespace radix_cpp {
   }
 
   template<typename T, typename std::enable_if<sizeof(T) == 8>::type* = nullptr>
-  static inline T murmur3_mix_k1(T k1) noexcept {
+  inline T murmur3_mix_k1(T k1) noexcept {
     k1 *= UINT64_C(0x87c37b91114253d5);
     k1 = rotl(k1, 31);
     k1 *= UINT64_C(0x4cf5ad432745937f);
@@ -155,7 +155,7 @@ namespace radix_cpp {
   }
 
   template<typename T, typename std::enable_if<sizeof(T) == 4>::type* = nullptr>
-  static inline T murmur3_mix_h1(T h1, T k1) noexcept {
+  inline T murmur3_mix_h1(T h1, T k1) noexcept {
     h1 ^= k1;
     h1 = rotl(h1, 13);
     h1 = h1 * 5 + 0xe6546b64;
@@ -163,7 +163,7 @@ namespace radix_cpp {
   }
 
   template<typename T, typename std::enable_if<sizeof(T) == 8>::type* = nullptr>
-  static inline T murmur3_mix_h1(T h1, T k1) noexcept {
+  inline T murmur3_mix_h1(T h1, T k1) noexcept {
     h1 ^= k1;
     h1 = rotl(h1, 27);
     h1 = h1 * 5 + 0x52dce729;
@@ -171,7 +171,7 @@ namespace radix_cpp {
   }
 
   template<typename T, typename std::enable_if<sizeof(T) == 4>::type* = nullptr>
-  static inline T murmur3_fmix(T h1) noexcept {
+  inline T murmur3_fmix(T h1) noexcept {
     h1 ^= h1 >> 16;
     h1 *= 0x85ebca6b;
     h1 ^= h1 >> 13;
@@ -181,7 +181,7 @@ namespace radix_cpp {
   }
 
   template<typename T, typename std::enable_if<sizeof(T) == 8>::type* = nullptr>
-  static inline T murmur3_fmix(T h1) noexcept {
+  inline T murmur3_fmix(T h1) noexcept {
     h1 ^= h1 >> 33;
     h1 *= UINT64_C(0xff51afd7ed558ccd);
     h1 ^= h1 >> 33;
