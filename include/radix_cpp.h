@@ -229,7 +229,7 @@ namespace radix_cpp {
 	  offset_(0),
 	  prefix_key_(),
 	  depth_(0),
-	  table_size_(table->data_size_) { }
+	  table_size_(table->table_size_) { }
       
       Iterator(Self * table, uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset) noexcept
 	: table_(table),
@@ -237,7 +237,7 @@ namespace radix_cpp {
 	  offset_(offset),
 	  prefix_key_(std::move(prefix_key)),
 	  depth_(depth),
-      	  table_size_(table->data_size_) { }
+      	  table_size_(table->table_size_) { }
       
       void set_indices(uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset) noexcept {
 	depth_ = depth;
@@ -255,10 +255,10 @@ namespace radix_cpp {
 	return &(table_->read_node(h, offset_).data);
       }
       Iterator& operator++() noexcept {
-	if (table_size_ != table_->data_size_) {
+	if (table_size_ != table_->table_size_) {
 	  // table size has changed => repair the iterator
 	  
-	  table_size_ = table_->data_size_;
+	  table_size_ = table_->table_size_;
 	  offset_ = 0;
 	  size_t h = calc_hash(depth_, prefix_key_, ordinal_);
 
@@ -483,16 +483,16 @@ namespace radix_cpp {
 	num_final_entries_(std::exchange(other.num_final_entries_, 0)),
 	num_inserts_(std::exchange(other.num_inserts_, 0)),
 	num_insert_collisions_(std::exchange(other.num_insert_collisions_, 0)),
-	data_size_(std::exchange(other.data_size_, 0)),
-	data_(std::exchange(other.data_, nullptr)) { }
+	table_size_(std::exchange(other.table_size_, 0)),
+	nodes_(std::exchange(other.nodes_, nullptr)) { }
 
     Table & operator=(Table && other) noexcept {
       std::swap(num_entries_, other.num_entries);
       std::swap(num_final_entries_, other.num_final_entries_);
       std::swap(num_inserts_, other.num_inserts_);
       std::swap(num_insert_collisions_, other.num_insert_collisons_);
-      std::swap(data_size_, other.data_size_);
-      std::swap(data_, other.data_);
+      std::swap(table_size_, other.table_size_);
+      std::swap(nodes_, other.nodes_);
       return *this;
     }
     
@@ -504,20 +504,20 @@ namespace radix_cpp {
     }
 
     void clear() noexcept {
-      for (size_t i = 0; i < data_size_; i++) {
-	auto & node = data_[i];
+      for (size_t i = 0; i < table_size_; i++) {
+	auto & node = nodes_[i];
 	if (node.flags) {
 	  node.data.~value_type();
 	  node.prefix_key.~key_type();
 	}
       }
-      std::free(data_);
-      num_entries_ = num_final_entries_ = num_inserts_ = num_insert_collisions_ = data_size_ = 0;
-      data_ = NULL;
+      std::free(nodes_);
+      num_entries_ = num_final_entries_ = num_inserts_ = num_insert_collisions_ = table_size_ = 0;
+      nodes_ = NULL;
     }
 
     iterator find(const key_type & key) noexcept {
-      if (!data_size_) return end();
+      if (!table_size_) return end();
       uint32_t depth = static_cast<uint32_t>(keysize(key));
       auto prefix_key = key_type();
       size_t ordinal = 0;
@@ -635,10 +635,10 @@ namespace radix_cpp {
     
   private:
     std::pair<iterator, size_t> create_nodes_for_key(const key_type & key0) {
-      if (!data_) {
+      if (!nodes_) {
 	init(bucket_count);
-      } else if (100 * num_entries_ / data_size_ >= max_load_factor100) { // Check the load factor
-	resize(data_size_ * 2);
+      } else if (100 * num_entries_ / table_size_ >= max_load_factor100) { // Check the load factor
+	resize(table_size_ * 2);
       }
 
       auto prefix_key = key_type();
@@ -740,17 +740,17 @@ namespace radix_cpp {
 
     // size must be a power of two
     void init(size_t s) {
-      if (data_) std::free(data_);
-      data_ = reinterpret_cast<Node*>(std::malloc(s * sizeof(Node)));
-      data_size_ = s;
-      for (size_t i = 0; i < data_size_; i++) data_[i].flags = 0;
+      if (nodes_) std::free(nodes_);
+      nodes_ = reinterpret_cast<Node*>(std::malloc(s * sizeof(Node)));
+      table_size_ = s;
+      for (size_t i = 0; i < table_size_; i++) nodes_[i].flags = 0;
     }
     void resize(size_t new_size) {
       Self new_table;
       new_table.init(new_size);
       size_t collisions = 0;
-      for (size_t i = 0; i < data_size_; i++) {
-	Node & node = data_[i];
+      for (size_t i = 0; i < table_size_; i++) {
+	Node & node = nodes_[i];
 	if (node.flags) {
 	  size_t offset = 0;
 	  while ( 1 ) {
@@ -766,12 +766,12 @@ namespace radix_cpp {
 	}
       }
       num_insert_collisions_ += collisions;
-      std::swap(data_, new_table.data_);
-      std::swap(data_size_, new_table.data_size_);
+      std::swap(nodes_, new_table.nodes_);
+      std::swap(table_size_, new_table.table_size_);
     }
 
     inline Node & read_node(size_t h, size_t offset) noexcept {
-      return data_[(h + offset) & (data_size_ - 1)];
+      return nodes_[(h + offset) & (table_size_ - 1)];
     }
 
     // calc_hash() uses Murmur3 to calculate hash for a Node.
@@ -788,8 +788,8 @@ namespace radix_cpp {
 
     size_t num_entries_ = 0, num_final_entries_ = 0;
     size_t num_inserts_ = 0, num_insert_collisions_ = 0;
-    size_t data_size_ = 0;
-    Node* data_ = NULL;
+    size_t table_size_ = 0;
+    Node* nodes_ = NULL;
   };
 
   template <typename Key>
