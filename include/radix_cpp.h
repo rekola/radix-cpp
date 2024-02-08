@@ -195,7 +195,7 @@ namespace radix_cpp {
     static constexpr bool is_map = !std::is_void<T>::value;
     static constexpr bool is_set = !is_map;
     static constexpr size_t bucket_count = 256; // bucket count for the ordered portion of the key
-    static constexpr size_t max_load_factor = 6;
+    static constexpr size_t max_load_factor100 = 60;
     
     using key_type = Key;
     using mapped_type = T;
@@ -637,7 +637,7 @@ namespace radix_cpp {
     std::pair<iterator, size_t> create_nodes_for_key(const key_type & key0) {
       if (!data_) {
 	init(bucket_count);
-      } else if (10 * num_entries_ / data_size_ >= max_load_factor) { // Check the load factor
+      } else if (100 * num_entries_ / data_size_ >= max_load_factor100) { // Check the load factor
 	resize(data_size_ * 2);
       }
 
