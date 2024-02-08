@@ -513,7 +513,7 @@ namespace radix_cpp {
       }
       std::free(nodes_);
       num_entries_ = num_final_entries_ = num_inserts_ = num_insert_collisions_ = table_size_ = 0;
-      nodes_ = NULL;
+      nodes_ = nullptr;
     }
 
     iterator find(const key_type & key) noexcept {
@@ -789,7 +789,7 @@ namespace radix_cpp {
     size_t num_entries_ = 0, num_final_entries_ = 0;
     size_t num_inserts_ = 0, num_insert_collisions_ = 0;
     size_t table_size_ = 0;
-    Node* nodes_ = NULL;
+    Node* nodes_ = nullptr;
   };
 
   template <typename Key>
