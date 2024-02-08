@@ -53,8 +53,10 @@ TEST_CASE( "large integer sets work and iterators are stable", "[large_set]") {
   radix_cpp::set<uint32_t> S;
   S.insert(1000);
   auto it0 = S.find(1000);
+
+  constexpr uint32_t n_vals = 1000000;
   
-  for (uint32_t i = 0; i < 1000000; i++) {
+  for (uint32_t i = 0; i < n_vals; i++) {
     S.insert(i);
   }
   REQUIRE(*it0 == 1000);
@@ -73,7 +75,7 @@ TEST_CASE( "large integer sets work and iterators are stable", "[large_set]") {
     next_consecutive_element = v + 1;
   }
 
-  REQUIRE(next_consecutive_element == 1000000);
+  REQUIRE(next_consecutive_element == n_vals);
 }
 
 TEST_CASE( "simple string sets can be created", "[string_set]" ) {
