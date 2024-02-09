@@ -1,5 +1,6 @@
 # radix-cpp
 
+[![GitHub License](https://img.shields.io/github/license/rekola/radix-cpp?logo=github&logoColor=lightgrey&color=yellow)](https://github.com/rekola/radix-cpp/blob/main/LICENSE)
 [![CI](https://github.com/rekola/radix-cpp/workflows/Ubuntu-CI/badge.svg)]()
 [![VS17-CI](https://github.com/rekola/radix-cpp/workflows/VS17-CI/badge.svg)]()
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
