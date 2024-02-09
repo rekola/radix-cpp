@@ -310,12 +310,12 @@ namespace radix_cpp {
       
       template <bool O>
       bool operator== (const Iterator<O>& o) const noexcept {
-	return depth_ == o.depth_ && ordinal_ == o.ordinal_ && offset_ == o.offset_;
+	return depth_ == o.depth_ && ordinal_ == o.ordinal_ && offset_ == o.offset_ && prefix_key_ == o.prefix_key_;
       }
       
       template <bool O>
       bool operator!= (const Iterator<O>& o) const noexcept {
-	return depth_ != o.depth_ || ordinal_ != o.ordinal_ || offset_ != o.offset_;
+	return depth_ != o.depth_ || ordinal_ != o.ordinal_ || offset_ != o.offset_ || prefix_key_ != o.prefix_key_;
       }
 
       void fast_forward() {

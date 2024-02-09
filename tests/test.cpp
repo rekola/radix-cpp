@@ -257,3 +257,36 @@ TEST_CASE( "insert_or_assign works", "[insert_or_assign]") {
   M.insert_or_assign("key", 2);
   REQUIRE(M["key"] == 2);
 }
+
+TEST_CASE( "iterator comparison works", "[iterator_cmp]") {
+  radix_cpp::set<uint32_t> S;
+  S.insert(1);
+  S.insert(2);
+  S.insert(3);
+  auto it = S.begin();
+  REQUIRE(it == S.begin());
+  REQUIRE(it != S.end());
+  REQUIRE(it == S.find(1));
+  REQUIRE(it != S.find(2));
+  REQUIRE(it != S.find(3));
+
+  it++;
+  
+  REQUIRE(it != S.begin());
+  REQUIRE(it != S.end());
+  REQUIRE(it != S.find(1));
+  REQUIRE(it == S.find(2));
+  REQUIRE(it != S.find(3));
+
+  it++;
+  
+  REQUIRE(it != S.begin());
+  REQUIRE(it != S.end());
+  REQUIRE(it != S.find(1));
+  REQUIRE(it != S.find(2));
+  REQUIRE(it == S.find(3));
+
+  it++;
+
+  REQUIRE(it == S.end());
+}
