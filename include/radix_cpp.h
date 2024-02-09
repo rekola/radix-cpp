@@ -531,7 +531,7 @@ namespace radix_cpp {
 	} else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix_key) {
 	  // collision
 	  offset++;
-	} else if (node.flags & flag_is_final && getFirstConst(read_keyval(h, offset)) == key) {
+	} else if (node.flags & flag_is_final) {
 	  return iterator(this, depth, prefix_key, ordinal, offset);
 	} else {
 	  break; // not final / wrong key
@@ -663,31 +663,13 @@ namespace radix_cpp {
 	
 	while ( 1 ) {
 	  auto & node = read_node(h, offset);
-	  auto & keyval = read_keyval(h, offset);
-	  if (node.flags) {
-	    if (node.depth == depth && node.prefix_key == prefix_key) {
-	      if (getFirstConst(keyval) != key) {
-		num_insert_collisions_++;
-		offset++;
-		continue;
-	      } else {
-		// already inserted
-	      }
-	    } else {
-	      // collision
-	      offset++;
-	      num_insert_collisions_++;
-	      continue;
-	    }
-	  }
-#ifdef DEBUG
-	  std::cerr << "  h = " << h << ", key = " << key << ", ordinal = " << ordinal << ", offset = " << offset << ", prefix = " << prefix_key << "\n";
-#endif
-	  bool is_new = true;
 	  if (!node.flags) {
 	    if (is_final) {
+	      num_final_entries_++;
 	      new (static_cast<void*>(&(node.prefix_key))) key_type(prefix_key);
+	      // don't set flag_is_assigned for final nodes
 	    } else {
+	      auto & keyval = read_keyval(h, offset);
 	      new (static_cast<void*>(&keyval)) value_type(mk_value_from_key(key));
 	      new (static_cast<void*>(&(node.prefix_key))) key_type(std::move(prefix_key));
 	      node.flags = flag_is_assigned | flag_has_children;
@@ -695,14 +677,17 @@ namespace radix_cpp {
 	    node.hash = h;
 	    node.depth = depth;
 	    node.ordinal = static_cast<uint8_t>(ordinal);
-	    num_entries_++;
+	    num_entries_++;	    
+	  } else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix_key) {
+	    // collision
+	    offset++;
+	    num_insert_collisions_++;
+	    continue;
 	  } else if (is_final && !(node.flags & flag_is_final)) {
-	    // node.data = vt; // node exists, but it is not final: update data
-	  } else {
-	    is_new = false;
+	    num_final_entries_++;
+	    // don't set flag_is_final yet
 	  }
 	  if (is_final) {
-	    if (is_new) num_final_entries_++;
 	    return std::pair(iterator(this, depth, std::move(prefix_key), ordinal, offset), h);
 	  } else {
 	    break;
