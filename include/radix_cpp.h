@@ -265,8 +265,8 @@ namespace radix_cpp {
 	  while ( 1 ) {
 	    auto & node = table_->read_node(h, offset_);
 	    if (node.flags & flag_is_assigned &&
-		node.depth == depth_ && node.prefix_key == prefix_key_ &&
-		node.ordinal == ordinal_) {
+		node.depth == depth_ && node.ordinal == ordinal_ &&
+		node.prefix_key == prefix_key_) {
 	      break;
 	    }
 	    offset_++;
@@ -306,7 +306,7 @@ namespace radix_cpp {
 	      offset = 0;
 	      h = calc_hash(depth, prefix, ordinal);
 	      continue;
-	    } else if (node.depth != depth || node.prefix_key != prefix || node.ordinal != ordinal) {
+	    } else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix) {
 	      offset++;
 	      continue;
 	    }
@@ -377,7 +377,7 @@ namespace radix_cpp {
 	      ordinal++;
 	      offset = 0;
 	      h = calc_hash(depth_ + 1, prefix_key, ordinal);
-	    } else if (depth_ + 1 == node.depth && node.prefix_key == prefix_key && node.ordinal == ordinal) {
+	    } else if (depth_ + 1 == node.depth && node.ordinal == ordinal && node.prefix_key == prefix_key) {
 	      break;
 	    } else {
 	      offset++;
@@ -442,21 +442,15 @@ namespace radix_cpp {
 	    ordinal++;
 	    offset = 0;
 	    h = calc_hash(depth, new_prefix_key, ordinal);
-	  } else if (node.depth != depth || getFirstConst(table_->read_keyval(h, offset)) != new_key) {
-	    offset++;
-	  } else {
+	  } else if (node.depth == depth && node.ordinal == ordinal && node.prefix_key == new_prefix_key) {
 	    break;
+	  } else {
+	    offset++;
 	  }
 	}
 	if (ordinal == bucket_count) {
 #ifdef DEBUG
 	  std::cerr << "down failed\n";
-#endif
-	  abort();
-	}
-	if (getFirstConst(table_->read_keyval(h, offset)) != node.prefix_key) {
-#ifdef DEBUG
-	  std::cerr << "wrong node 2\n";
 #endif
 	  abort();
 	}
@@ -534,7 +528,7 @@ namespace radix_cpp {
 	auto & node = read_node(h, offset);
 	if (!node.flags) {
 	  break; // not found
-	} else if (node.depth != depth || node.prefix_key != prefix_key || node.ordinal != ordinal) {
+	} else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix_key) {
 	  // collision
 	  offset++;
 	} else if (node.flags & flag_is_final && getFirstConst(read_keyval(h, offset)) == key) {
