@@ -238,88 +238,72 @@ namespace radix_cpp {
       }
       
       Iterator& operator++() noexcept {
-	repair_if_needed();
+	if ( depth_ == 0 && ordinal_ == 1) {
+	  return *this; // already ended
+	}
 	
-	bool is_first = true;
-	while ( !(depth_ == 0 && ordinal_ == 1) ) {
-	  key_type prefix = prefix_key_;
-	  uint32_t depth = depth_;
-	  size_t ordinal = ordinal_, offset = offset_;
+	key_type prefix = prefix_key_;
+	uint32_t depth = depth_;
+	size_t ordinal = ordinal_, offset = offset_;
 
-	  if (depth == 0) {
+	// go to the next direct Node
+	if (depth == 0) { // empty key
+	  depth++;
+	  ordinal = offset = 0;
+	} else {
+	  repair_if_needed();
+	  size_t h = calc_hash(depth, prefix, ordinal);
+	  auto & node = table_->read_node(h, offset);
+	  if (node.flags & flag_has_children) {
 	    depth++;
-	    ordinal = offset = 0;
-	  } else if (!is_first) {
-	    ordinal++;
-	    offset = 0;
+	    prefix = getFirstConst(table_->read_keyval(h, offset));
+	    ordinal = 0;
 	  } else {
-	    size_t h = calc_hash(depth, prefix, ordinal);
+	    ordinal++;
+	  }
+	  offset = 0;
+	}
+
+	// iterate until a final Node is found
+	size_t h = calc_hash(depth, prefix, ordinal);
+	while ( 1 ) {
+	  if (ordinal == bucket_count) {
+	    // we have run through the whole range => go down the tree
+	    if (depth <= 1) {
+	      // become an end iterator
+	      set_indices(0, key_type{}, 1, 0);
+	      return *this;
+	    } else {
+	      depth--;
+	      auto [ parent_ordinal, parent_prefix_key ] = remove_top(prefix);
+	      prefix = parent_prefix_key;
+	      ordinal = parent_ordinal + 1;
+	      offset = 0;
+	      h = calc_hash(depth, prefix, ordinal);
+	    }
+	  } else {
 	    auto & node = table_->read_node(h, offset);
-	    if (node.flags & flag_is_final && node.flags & flag_has_children) {
+	    if (!node.flags) {
+	      // Node is not assigned
+	      ordinal++;
+	      offset = 0;
+	      h = calc_hash(depth, prefix, ordinal);
+	    } else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix) {
+	      // collision
+	      offset++;
+	    } else if (node.flags & flag_is_final) {
+	      // a final Node was found
+	      set_indices(depth, prefix, ordinal, offset);
+	      return *this;
+	    } else {
+	      // non-final node => go up the tree
 	      depth++;
 	      prefix = getFirstConst(table_->read_keyval(h, offset));
-	      ordinal = 0;
-	    } else {
-	      ordinal++;
+	      ordinal = offset = 0;
+	      h = calc_hash(depth, prefix, ordinal);
 	    }
-	    offset = 0;
-	    is_first = false;
-	  }
-
-	  size_t h = calc_hash(depth, prefix, ordinal);
-	  bool found = false;
-	  while ( 1 ) {
-	    if (ordinal == bucket_count) {
-	      // we have run through the whole range => go down the tree
-	      if (depth <= 1) {
-		// become an end iterator
-		set_indices(0, key_type{}, 1, 0);
-		return *this;
-	      } else {
-		depth--;
-		auto [ parent_ordinal, parent_prefix_key ] = remove_top(prefix);
-		prefix = parent_prefix_key;
-		ordinal = parent_ordinal + 1;
-		offset = 0;
-		h = calc_hash(depth, prefix, ordinal);
-	      }
-	    } else {
-	      auto & node = table_->read_node(h, offset);
-	      if (!node.flags) {
-		ordinal++;
-		offset = 0;
-		h = calc_hash(depth, prefix, ordinal);
-		continue;
-	      } else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix) {
-		offset++;
-		continue;
-	      }
-	      found = true;
-	      if (node.flags & flag_is_final) {
-		break;
-	      } else {
-		depth++;
-		prefix = getFirstConst(table_->read_keyval(h, offset));
-		ordinal = offset = 0;
-		h = calc_hash(depth, prefix, ordinal);
-	      }
-	    }
-	  }
-
-	  if (ordinal < bucket_count) {
-#ifdef DEBUG
-	    std::cerr << "++ depth = " << depth << ", prefix = " << prefix << ", ordinal = " << ordinal << ", offset = " << offset << "\n";
-#endif
-	    set_indices(depth, prefix, ordinal, offset);
-	    return *this;
-	  } else if (found) {
-#ifdef DEBUG
-	    std::cerr << "could not find next subiterator\n";
-#endif
-	    abort();
 	  }
 	}
-	return *this;
       }
       Iterator operator++(int) noexcept {
 	Iterator<IsConst> tmp = *this;
