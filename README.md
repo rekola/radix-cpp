@@ -101,7 +101,7 @@ To implement set and map for custom type, the following free functions must be d
 
 | Function | Description |
 | - | - |
-| key_type prefix(key_type key, size_t n) | Returns the prefix of n most significant digits of the key |
+| key_type prefix(key_type key) | Returns the prefix of all but the least significant digit of the key |
 | size_t top(key_type key) | Returns the numeric value of the least significant digit of the key |
 | size_t keysize(key_type key) | Returns the number of digits in the key |
 

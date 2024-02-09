@@ -17,44 +17,44 @@ namespace radix_cpp {
   inline constexpr uint32_t flag_is_final = 2;
   inline constexpr uint32_t flag_has_children = 4;
   
-  inline uint8_t prefix(uint8_t key, size_t n_digits) noexcept {
-    return n_digits == 0 ? 0 : key;
+  inline uint8_t prefix(uint8_t key) noexcept {
+    return 0;
   }
 
-  inline uint16_t prefix(uint16_t key, size_t n_digits) noexcept {
-    return n_digits == 0 ? 0 : n_digits >= sizeof(key) ? key : (key >> ((sizeof(key) - n_digits) * 8));
+  inline uint16_t prefix(uint16_t key) noexcept {
+    return key >> 8;
   }
 
-  inline uint32_t prefix(uint32_t key, size_t n_digits) noexcept {
-    return n_digits == 0 ? 0 : n_digits >= sizeof(key) ? key : (key >> ((sizeof(key) - n_digits) * 8));
+  inline uint32_t prefix(uint32_t key) noexcept {
+    return key >> 8;
   }
 
-  inline uint64_t prefix(uint64_t key, size_t n_digits) noexcept {
-    return n_digits == 0 ? 0 : n_digits >= sizeof(key) ? key : (key >> ((sizeof(key) - n_digits) * 8));
+  inline uint64_t prefix(uint64_t key) noexcept {
+    return key >> 8;
   }
 
-  inline float prefix(float key, size_t n_digits) noexcept {
+  inline float prefix(float key) noexcept {
     union {
       float f;
       uint32_t i;
     } u;
     u.f = key;
-    u.i = prefix(u.i, n_digits);
+    u.i = prefix(u.i);
     return u.f;
   }
 
-  inline double prefix(double key, size_t n_digits) noexcept {
+  inline double prefix(double key) noexcept {
     union {
       double f;
       uint64_t i;
     } u;
     u.f = key;
-    u.i = prefix(u.i, n_digits);
+    u.i = prefix(u.i);
     return u.f;
   }
 
-  inline std::string prefix(const std::string & key, size_t n_digits) noexcept {
-    return n_digits >= key.size() ? key : key.substr(0, n_digits);
+  inline std::string prefix(const std::string & key) noexcept {
+    return key.empty() ? key : key.substr(0, key.size() - 1);
   }
 
   inline size_t top(uint8_t key) noexcept {
@@ -429,7 +429,7 @@ namespace radix_cpp {
 	}
 	auto depth = depth_ - 1;
 	auto new_key = node.prefix_key;
-	auto new_prefix_key = depth > 1 ? prefix(node.prefix_key, keysize(new_key) - 1) : key_type(); // A Hack
+	auto new_prefix_key = prefix(node.prefix_key);
 	auto ordinal = top(new_key);
 	auto offset = size_t{0};
 	h = calc_hash(depth, new_prefix_key, ordinal);
@@ -515,13 +515,9 @@ namespace radix_cpp {
 
     iterator find(const key_type & key) noexcept {
       if (!table_size_) return end();
-      uint32_t depth = static_cast<uint32_t>(keysize(key));
-      auto prefix_key = key_type();
-      size_t ordinal = 0;
-      if (depth) {
-	prefix_key = prefix(key, depth - 1);
-	ordinal = top(key);
-      }
+      auto depth = static_cast<uint32_t>(keysize(key));
+      auto prefix_key = prefix(key);
+      auto ordinal = top(key);
       size_t offset = 0, h = calc_hash(depth, prefix_key, ordinal);
 
       while ( 1 ) {
@@ -633,32 +629,30 @@ namespace radix_cpp {
     size_t num_insert_collisions() const noexcept { return num_insert_collisions_; }
     
   private:
-    std::pair<iterator, size_t> create_nodes_for_key(const key_type & key0) {
+    std::pair<iterator, size_t> create_nodes_for_key(key_type key) {
       if (!nodes_) {
 	init(bucket_count);
       } else if (100 * num_entries_ / table_size_ >= max_load_factor100) { // Check the load factor
 	resize(table_size_ * 2);
       }
 
-      auto prefix_key = key_type();
       num_inserts_++;
 
-      // for empty key, start from depth of 0
-      uint32_t n = static_cast<uint32_t>(keysize(key0));
-      uint32_t depth = n == 0 ? 0 : 1;
-
+      auto n = keysize(key);
+      auto depth = static_cast<uint32_t>(n);
+      iterator it = end();
+      size_t first_hash = 0;
+      bool is_final = true;
+      
 #ifdef DEBUG
-      std::cerr << "inserting node " << key0 << "\n";
+      std::cerr << "inserting node " << key << "\n";
 #endif
       
-      for ( ; depth <= n; depth++) {
-	bool is_final = depth == n;
-	auto key = key_type();
-	size_t ordinal = 0;
-	if (depth) {
-	  key = prefix(key0, depth);
-	  ordinal = top(key);
-	}
+      // insert digits from least significant to most significant
+      // even if keysize is zero, add at least one digit (for empty strings)
+      for ( size_t i = 0; i < (n == 0 ? 1 : n); i++, depth-- ) {
+	size_t ordinal = top(key);
+	key_type prefix_key = prefix(key);
 	size_t offset = 0, h = calc_hash(depth, prefix_key, ordinal);
 	
 	while ( 1 ) {
@@ -671,13 +665,13 @@ namespace radix_cpp {
 	    } else {
 	      auto & keyval = read_keyval(h, offset);
 	      new (static_cast<void*>(&keyval)) value_type(mk_value_from_key(key));
-	      new (static_cast<void*>(&(node.prefix_key))) key_type(std::move(prefix_key));
+	      new (static_cast<void*>(&(node.prefix_key))) key_type(prefix_key);
 	      node.flags = flag_is_assigned | flag_has_children;
 	    }
 	    node.hash = h;
-	    node.depth = depth;
+	    node.depth = static_cast<uint32_t>(depth);
 	    node.ordinal = static_cast<uint8_t>(ordinal);
-	    num_entries_++;	    
+	    num_entries_++;
 	  } else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix_key) {
 	    // collision
 	    offset++;
@@ -688,17 +682,17 @@ namespace radix_cpp {
 	    // don't set flag_is_final yet
 	  }
 	  if (is_final) {
-	    return std::pair(iterator(this, depth, std::move(prefix_key), ordinal, offset), h);
-	  } else {
-	    break;
+	    it = iterator(this, depth, prefix_key, ordinal, offset);
+	    first_hash = h;
+	    is_final = false;
 	  }
+	  break;
 	}
 
-	prefix_key = std::move(key);
+	key = std::move(prefix_key);
       }
 
-      // error
-      return std::pair(end(), 0);
+      return std::pair(it, first_hash);
     }
     // getFirstConst returns the key from value_type for either set or map
     // This version is for sets, where value_type == key_type
