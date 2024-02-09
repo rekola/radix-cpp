@@ -212,36 +212,32 @@ namespace radix_cpp {
 
       reference operator*() const noexcept {
 	size_t h = calc_hash(depth_, prefix_key_, ordinal_);
-	return table_->read_keyval(h, offset_);
-      }
-      pointer operator->() noexcept {
-	size_t h = calc_hash(depth_, prefix_key_, ordinal_);
-	return &(table_->read_keyval(h, offset_));
-      }
-      Iterator& operator++() noexcept {
+	size_t offset = offset_;
 	if (table_size_ != table_->table_size_) {
-	  // table size has changed => repair the iterator
-	  
-	  table_size_ = table_->table_size_;
-	  offset_ = 0;
-	  size_t h = calc_hash(depth_, prefix_key_, ordinal_);
-
+	  // table size has changed => find correct offset
 	  while ( 1 ) {
-	    auto & node = table_->read_node(h, offset_);
+	    auto & node = table_->read_node(h, offset);
 	    if (!node.flags) {
 #ifdef DEBUG
 	      std::cerr << "repair failed\n";
 #endif
 	      abort();
-	    } else if (node.flags & flag_is_assigned &&
-		node.depth == depth_ && node.ordinal == ordinal_ &&
-		node.prefix_key == prefix_key_) {
+	    } else if (node.depth == depth_ && node.ordinal == ordinal_ && node.prefix_key == prefix_key_) {
 	      break;
 	    }
-	    offset_++;
+	    offset++;
 	  }
 	}
-
+	return table_->read_keyval(h, offset);
+      }
+      pointer operator->() noexcept {
+	repair_if_needed();
+	size_t h = calc_hash(depth_, prefix_key_, ordinal_);
+	return &(table_->read_keyval(h, offset_));
+      }
+      Iterator& operator++() noexcept {
+	repair_if_needed();
+	
 	bool is_first = true;
 	while ( !(depth_ == 0 && ordinal_ == 1) ) {
 	  key_type prefix = prefix_key_;
@@ -399,6 +395,30 @@ namespace radix_cpp {
       size_t get_offset() const { return offset_; }
 
     private:
+      void repair_if_needed() {
+	if (table_size_ != table_->table_size_) {
+	  // table size has changed => repair the iterator
+	  table_size_ = table_->table_size_;
+	  offset_ = 0;
+	  size_t h = calc_hash(depth_, prefix_key_, ordinal_);
+
+	  while ( 1 ) {
+	    auto & node = table_->read_node(h, offset_);
+	    if (!node.flags) {
+#ifdef DEBUG
+	      std::cerr << "repair failed\n";
+#endif
+	      abort();
+	    } else if (node.flags & flag_is_assigned &&
+		       node.depth == depth_ && node.ordinal == ordinal_ &&
+		       node.prefix_key == prefix_key_) {
+	      break;
+	    }
+	    offset_++;
+	  }
+	}
+      }
+      
       Self * table_;
       size_t ordinal_, offset_;
       key_type prefix_key_;
