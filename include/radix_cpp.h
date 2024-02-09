@@ -17,82 +17,46 @@ namespace radix_cpp {
   inline constexpr uint32_t flag_is_final = 2;
   inline constexpr uint32_t flag_has_children = 4;
   
-  inline uint8_t prefix(uint8_t key) noexcept {
-    return 0;
+  inline std::pair<size_t, std::uint8_t> remove_top(uint8_t key) noexcept {
+    return std::pair(key, 0);
   }
 
-  inline uint16_t prefix(uint16_t key) noexcept {
-    return key >> 8;
+  inline std::pair<size_t, std::uint16_t> remove_top(uint16_t key) noexcept {
+    return std::pair(key & 0xff, key >> 8);
   }
 
-  inline uint32_t prefix(uint32_t key) noexcept {
-    return key >> 8;
+  inline std::pair<size_t, std::uint32_t> remove_top(uint32_t key) noexcept {
+    return std::pair(key & 0xff, key >> 8);
   }
 
-  inline uint64_t prefix(uint64_t key) noexcept {
-    return key >> 8;
+  inline std::pair<size_t, std::uint64_t> remove_top(uint64_t key) noexcept {
+    return std::pair(key & 0xff, key >> 8);
   }
 
-  inline float prefix(float key) noexcept {
+  inline std::pair<size_t, float> remove_top(float key) noexcept {
     union {
       float f;
       uint32_t i;
     } u;
     u.f = key;
-    u.i = prefix(u.i);
-    return u.f;
+    return remove_top(u.i);
   }
 
-  inline double prefix(double key) noexcept {
+  inline std::pair<size_t, double> remove_top(double key) noexcept {
     union {
       double f;
       uint64_t i;
     } u;
     u.f = key;
-    u.i = prefix(u.i);
-    return u.f;
+    return remove_top(u.i);
   }
 
-  inline std::string prefix(const std::string & key) noexcept {
-    return key.empty() ? key : key.substr(0, key.size() - 1);
-  }
-
-  inline size_t top(uint8_t key) noexcept {
-    return key;
-  }
-
-  inline size_t top(uint16_t key) noexcept {
-    return key & 0xff;
-  }
-
-  inline size_t top(uint32_t key) noexcept {
-    return key & 0xff;
-  }
-
-  inline size_t top(uint64_t key) noexcept {
-    return key & 0xff;
-  }
-
-  inline size_t top(float key) noexcept {
-    union {
-      float f;
-      uint32_t i;
-    } u;
-    u.f = key;
-    return u.i & 0xff;
-  }
-
-  inline size_t top(double key) noexcept {
-    union {
-      double f;
-      uint64_t i;
-    } u;
-    u.f = key;
-    return u.i & 0xff;
-  }
-
-  inline size_t top(const std::string & key) noexcept {
-    return key.empty() ? 0 : static_cast<unsigned char>(key.back());
+  inline std::pair<size_t, std::string> remove_top(const std::string & key) noexcept {
+    if (key.empty()) {
+      return std::pair(0, key);
+    } else {
+      return std::pair(static_cast<uint8_t>(key.back()), key.substr(0, key.size() - 1));
+    }
   }
 
   inline size_t keysize(uint8_t key) noexcept {
@@ -428,31 +392,25 @@ namespace radix_cpp {
 	  abort();
 	}
 	auto depth = depth_ - 1;
-	auto new_key = node.prefix_key;
-	auto new_prefix_key = prefix(node.prefix_key);
-	auto ordinal = top(new_key);
+	auto [ ordinal, new_prefix_key ] = remove_top(node.prefix_key);
 	auto offset = size_t{0};
 	h = calc_hash(depth, new_prefix_key, ordinal);
 #ifdef DEBUG
-	std::cerr << "down(): depth = " << depth_ << ", ordinal = " << ordinal_ << ", offset = " << offset_ << ", prefix = " << node.prefix_key << ", new key = " << new_key << ", new prefix = " << new_prefix_key << ", ordinal = " << ordinal << "\n";
+	std::cerr << "down(): depth = " << depth_ << ", ordinal = " << ordinal_ << ", offset = " << offset_ << ", prefix = " << node.prefix_key << ", new key = " << new_key << ", new prefix = " << new_prefix_key << "\n";
 #endif
-	while ( ordinal < bucket_count ) {
+	while ( 1 ) {
 	  auto & node = table_->read_node(h, offset);
 	  if (!node.flags) {
-	    ordinal++;
-	    offset = 0;
-	    h = calc_hash(depth, new_prefix_key, ordinal);
+#ifdef DEBUG
+	    std::cerr << "down failed\n";
+#endif
+	    abort();
 	  } else if (node.depth == depth && node.ordinal == ordinal && node.prefix_key == new_prefix_key) {
 	    break;
 	  } else {
+	    // collision
 	    offset++;
 	  }
-	}
-	if (ordinal == bucket_count) {
-#ifdef DEBUG
-	  std::cerr << "down failed\n";
-#endif
-	  abort();
 	}
 #ifdef DEBUG
 	std::cerr << "down(): depth = " << depth << ", prefix = " << new_prefix_key << ", ordinal = " << ordinal << ", offset = " << offset << "\n";
@@ -516,8 +474,7 @@ namespace radix_cpp {
     iterator find(const key_type & key) noexcept {
       if (!table_size_) return end();
       auto depth = static_cast<uint32_t>(keysize(key));
-      auto prefix_key = prefix(key);
-      auto ordinal = top(key);
+      auto [ ordinal, prefix_key ] = remove_top(key);
       size_t offset = 0, h = calc_hash(depth, prefix_key, ordinal);
 
       while ( 1 ) {
@@ -651,8 +608,7 @@ namespace radix_cpp {
       // insert digits from least significant to most significant
       // even if keysize is zero, add at least one digit (for empty strings)
       for ( size_t i = 0; i < (n == 0 ? 1 : n); i++, depth-- ) {
-	size_t ordinal = top(key);
-	key_type prefix_key = prefix(key);
+	auto [ ordinal, prefix_key ] = remove_top(key);
 	size_t offset = 0, h = calc_hash(depth, prefix_key, ordinal);
 	
 	while ( 1 ) {

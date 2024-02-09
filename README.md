@@ -101,8 +101,7 @@ To implement set and map for custom type, the following free functions must be d
 
 | Function | Description |
 | - | - |
-| key_type prefix(key_type key) | Returns the prefix of all but the least significant digit of the key |
-| size_t top(key_type key) | Returns the numeric value of the least significant digit of the key |
+| std::pair<key_type, size_t> remove_top(key_type key) | Returns a pair with the numeric value of the least significant digit of the key and the key with the least significant digit removed |
 | size_t keysize(key_type key) | Returns the number of digits in the key |
 
 Additionally, there must exist a specialization of std::hash for the custom key.
