@@ -228,7 +228,12 @@ namespace radix_cpp {
 
 	  while ( 1 ) {
 	    auto & node = table_->read_node(h, offset_);
-	    if (node.flags & flag_is_assigned &&
+	    if (!node.flags) {
+#ifdef DEBUG
+	      std::cerr << "repair failed\n";
+#endif
+	      abort();
+	    } else if (node.flags & flag_is_assigned &&
 		node.depth == depth_ && node.ordinal == ordinal_ &&
 		node.prefix_key == prefix_key_) {
 	      break;
