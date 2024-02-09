@@ -230,11 +230,13 @@ namespace radix_cpp {
 	}
 	return table_->read_keyval(h, offset);
       }
+      
       pointer operator->() noexcept {
 	repair_if_needed();
 	size_t h = calc_hash(depth_, prefix_key_, ordinal_);
 	return &(table_->read_keyval(h, offset_));
       }
+      
       Iterator& operator++() noexcept {
 	repair_if_needed();
 	
@@ -266,25 +268,41 @@ namespace radix_cpp {
 
 	  size_t h = calc_hash(depth, prefix, ordinal);
 	  bool found = false;
-	  while ( ordinal < bucket_count ) {
-	    auto & node = table_->read_node(h, offset);
-	    if (!node.flags) {
-	      ordinal++;
-	      offset = 0;
-	      h = calc_hash(depth, prefix, ordinal);
-	      continue;
-	    } else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix) {
-	      offset++;
-	      continue;
-	    }
-	    found = true;
-	    if (node.flags & flag_is_final) {
-	      break;
+	  while ( 1 ) {
+	    if (ordinal == bucket_count) {
+	      // we have run through the whole range => go down the tree
+	      if (depth <= 1) {
+		// become an end iterator
+		set_indices(0, key_type{}, 1, 0);
+		return *this;
+	      } else {
+		depth--;
+		auto [ parent_ordinal, parent_prefix_key ] = remove_top(prefix);
+		prefix = parent_prefix_key;
+		ordinal = parent_ordinal + 1;
+		offset = 0;
+		h = calc_hash(depth, prefix, ordinal);
+	      }
 	    } else {
-	      depth++;
-	      prefix = getFirstConst(table_->read_keyval(h, offset));
-	      ordinal = offset = 0;
-	      h = calc_hash(depth, prefix, ordinal);
+	      auto & node = table_->read_node(h, offset);
+	      if (!node.flags) {
+		ordinal++;
+		offset = 0;
+		h = calc_hash(depth, prefix, ordinal);
+		continue;
+	      } else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix) {
+		offset++;
+		continue;
+	      }
+	      found = true;
+	      if (node.flags & flag_is_final) {
+		break;
+	      } else {
+		depth++;
+		prefix = getFirstConst(table_->read_keyval(h, offset));
+		ordinal = offset = 0;
+		h = calc_hash(depth, prefix, ordinal);
+	      }
 	    }
 	  }
 
@@ -299,30 +317,6 @@ namespace radix_cpp {
 	    std::cerr << "could not find next subiterator\n";
 #endif
 	    abort();
-	  }
-
-	  // next element in the range was not found => go down the tree
-	  if (depth_ <= 1) {
-	    // become an end iterator
-	    set_indices(0, key_type{}, 1, 0);
-	    break;
-	  } else {
-	    auto depth = depth_ - 1;
-	    auto [ ordinal, new_prefix_key ] = remove_top(prefix_key_);
-	    auto offset = size_t{0};
-	    size_t h = calc_hash(depth, new_prefix_key, ordinal);
-	    while ( 1 ) {
-	      auto & node = table_->read_node(h, offset);
-	      if (!node.flags) {
-		abort();
-	      } else if (node.depth == depth && node.ordinal == ordinal && node.prefix_key == new_prefix_key) {
-		break;
-	      } else {
-		// collision
-		offset++;
-	      }
-	    }
-	    set_indices(depth, new_prefix_key, ordinal, offset);
 	  }
 	}
 	return *this;
