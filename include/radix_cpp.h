@@ -241,13 +241,14 @@ namespace radix_cpp {
 	while ( !(depth_ == 0 && ordinal_ == 1) ) {
 	  key_type prefix = prefix_key_;
 	  uint32_t depth = depth_;
-	  size_t ordinal = ordinal_, offset = 0;
+	  size_t ordinal = ordinal_, offset = offset_;
 
 	  if (depth == 0) {
 	    depth++;
-	    ordinal = 0;
+	    ordinal = offset = 0;
 	  } else if (!is_first) {
 	    ordinal++;
+	    offset = 0;
 	  } else {
 	    size_t h = calc_hash(depth, prefix, ordinal);
 	    auto & node = table_->read_node(h, offset);
@@ -258,6 +259,7 @@ namespace radix_cpp {
 	    } else {
 	      ordinal++;
 	    }
+	    offset = 0;
 	    is_first = false;
 	  }
 
