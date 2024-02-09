@@ -242,78 +242,77 @@ namespace radix_cpp {
 	  return *this; // already ended
 	}
 	
-	key_type prefix = prefix_key_;
-	uint32_t depth = depth_;
-	size_t ordinal = ordinal_, offset = offset_;
-
 	// go to the next direct Node
-	if (depth == 0) { // empty key
-	  depth++;
-	  ordinal = offset = 0;
+	if (depth_ == 0) {
+	  // empty key
+	  depth_++;
+	  ordinal_ = offset_ = 0;
 	} else {
 	  repair_if_needed();
-	  size_t h = calc_hash(depth, prefix, ordinal);
-	  auto & node = table_->read_node(h, offset);
+	  size_t h = calc_hash(depth_, prefix_key_, ordinal_);
+	  auto & node = table_->read_node(h, offset_);
 	  if (node.flags & flag_has_children) {
-	    depth++;
-	    prefix = getFirstConst(table_->read_keyval(h, offset));
-	    ordinal = 0;
+	    depth_++;
+	    prefix_key_ = getFirstConst(table_->read_keyval(h, offset_));
+	    ordinal_ = 0;
 	  } else {
-	    ordinal++;
+	    ordinal_++;
 	  }
-	  offset = 0;
+	  offset_ = 0;
 	}
 
 	// iterate until a final Node is found
-	size_t h = calc_hash(depth, prefix, ordinal);
+	size_t h = calc_hash(depth_, prefix_key_, ordinal_);
 	while ( 1 ) {
-	  if (ordinal == bucket_count) {
+	  if (ordinal_ == bucket_count) {
 	    // we have run through the whole range => go down the tree
-	    if (depth <= 1) {
+	    if (depth_ <= 1) {
 	      // become an end iterator
 	      set_indices(0, key_type{}, 1, 0);
 	      return *this;
 	    } else {
-	      depth--;
-	      auto [ parent_ordinal, parent_prefix_key ] = remove_top(prefix);
-	      prefix = parent_prefix_key;
-	      ordinal = parent_ordinal + 1;
-	      offset = 0;
-	      h = calc_hash(depth, prefix, ordinal);
+	      depth_--;
+	      auto [ parent_ordinal, parent_prefix_key ] = remove_top(prefix_key_);
+	      prefix_key_ = parent_prefix_key;
+	      ordinal_ = parent_ordinal + 1;
+	      offset_ = 0;
+	      h = calc_hash(depth_, prefix_key_, ordinal_);
 	    }
 	  } else {
-	    auto & node = table_->read_node(h, offset);
+	    auto & node = table_->read_node(h, offset_);
 	    if (!node.flags) {
 	      // Node is not assigned
-	      ordinal++;
-	      offset = 0;
-	      h = calc_hash(depth, prefix, ordinal);
-	    } else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix) {
+	      ordinal_++;
+	      offset_ = 0;
+	      h = calc_hash(depth_, prefix_key_, ordinal_);
+	    } else if (node.depth != depth_ || node.ordinal != ordinal_ || node.prefix_key != prefix_key_) {
 	      // collision
-	      offset++;
+	      offset_++;
 	    } else if (node.flags & flag_is_final) {
 	      // a final Node was found
-	      set_indices(depth, prefix, ordinal, offset);
 	      return *this;
 	    } else {
 	      // non-final node => go up the tree
-	      depth++;
-	      prefix = getFirstConst(table_->read_keyval(h, offset));
-	      ordinal = offset = 0;
-	      h = calc_hash(depth, prefix, ordinal);
+	      depth_++;
+	      prefix_key_ = getFirstConst(table_->read_keyval(h, offset_));
+	      ordinal_ = offset_ = 0;
+	      h = calc_hash(depth_, prefix_key_, ordinal_);
 	    }
 	  }
 	}
       }
+      
       Iterator operator++(int) noexcept {
 	Iterator<IsConst> tmp = *this;
 	++(*this);
 	return tmp;
       }
+      
       template <bool O>
       bool operator== (const Iterator<O>& o) const noexcept {
 	return depth_ == o.depth_ && ordinal_ == o.ordinal_ && offset_ == o.offset_;
       }
+      
       template <bool O>
       bool operator!= (const Iterator<O>& o) const noexcept {
 	return depth_ != o.depth_ || ordinal_ != o.ordinal_ || offset_ != o.offset_;
