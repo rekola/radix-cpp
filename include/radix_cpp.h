@@ -297,8 +297,30 @@ namespace radix_cpp {
 #endif
 	    abort();
 	  }
-	  // next element in the range was not found
-	  down();
+
+	  // next element in the range was not found => go down the tree
+	  if (depth_ <= 1) {
+	    // become an end iterator
+	    set_indices(0, key_type{}, 1, 0);
+	    break;
+	  } else {
+	    auto depth = depth_ - 1;
+	    auto [ ordinal, new_prefix_key ] = remove_top(prefix_key_);
+	    auto offset = size_t{0};
+	    size_t h = calc_hash(depth, new_prefix_key, ordinal);
+	    while ( 1 ) {
+	      auto & node = table_->read_node(h, offset);
+	      if (!node.flags) {
+		abort();
+	      } else if (node.depth == depth && node.ordinal == ordinal && node.prefix_key == new_prefix_key) {
+		break;
+	      } else {
+		// collision
+		offset++;
+	      }
+	    }
+	    set_indices(depth, new_prefix_key, ordinal, offset);
+	  }
 	}
 	return *this;
       }
@@ -370,54 +392,6 @@ namespace radix_cpp {
       size_t get_offset() const { return offset_; }
 
     private:
-      void down() {
-	if (depth_ <= 1) {
-	  // become an end iterator
-	  ordinal_ = 1;
-	  offset_ = depth_ = 0;
-	  return;
-	}
-	size_t h = calc_hash(depth_, prefix_key_, ordinal_);
-	auto & node = table_->read_node(h, offset_);
-	if (!node.flags) {
-#ifdef DEBG
-	  std::cerr << "error, node not assigned\n";
-#endif
-	  abort();
-	}
-	if (node.depth != depth_) {
-#ifdef DEBUG
-	  std::cerr << "wrong node 1\n";
-#endif
-	  abort();
-	}
-	auto depth = depth_ - 1;
-	auto [ ordinal, new_prefix_key ] = remove_top(node.prefix_key);
-	auto offset = size_t{0};
-	h = calc_hash(depth, new_prefix_key, ordinal);
-#ifdef DEBUG
-	std::cerr << "down(): depth = " << depth_ << ", ordinal = " << ordinal_ << ", offset = " << offset_ << ", prefix = " << node.prefix_key << ", new key = " << new_key << ", new prefix = " << new_prefix_key << "\n";
-#endif
-	while ( 1 ) {
-	  auto & node = table_->read_node(h, offset);
-	  if (!node.flags) {
-#ifdef DEBUG
-	    std::cerr << "down failed\n";
-#endif
-	    abort();
-	  } else if (node.depth == depth && node.ordinal == ordinal && node.prefix_key == new_prefix_key) {
-	    break;
-	  } else {
-	    // collision
-	    offset++;
-	  }
-	}
-#ifdef DEBUG
-	std::cerr << "down(): depth = " << depth << ", prefix = " << new_prefix_key << ", ordinal = " << ordinal << ", offset = " << offset << "\n";
-#endif
-	set_indices(depth, new_prefix_key, ordinal, offset);
-      }
-
       Self * table_;
       size_t ordinal_, offset_;
       key_type prefix_key_;
