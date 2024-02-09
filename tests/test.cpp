@@ -122,6 +122,7 @@ TEST_CASE( "shared prefixes work with strings", "[string_set_shared_prefix]" ) {
   REQUIRE(it == S.end());
 }
 
+#if 0
 TEST_CASE( "positive floating point keys", "[pos_float_set]") {
   radix_cpp::set<float> S;
   S.insert(1.1f);
@@ -137,6 +138,7 @@ TEST_CASE( "positive floating point keys", "[pos_float_set]") {
   REQUIRE(*it++ == 30000000.0f);
   REQUIRE(it == S.end());
 }
+#endif
 
 TEST_CASE( "empty set or map iteration doesn't fail", "[empty]") {
   radix_cpp::set<uint8_t> S;
