@@ -206,9 +206,10 @@ namespace radix_cpp {
   private:
     struct Node {
       value_type data;
-      key_type prefix_key;
-      uint32_t flags, depth;
       size_t hash;
+      uint32_t depth;
+      uint8_t flags, ordinal;
+      key_type prefix_key;
     };
 
   public:
@@ -266,7 +267,7 @@ namespace radix_cpp {
 	    auto & node = table_->read_node(h, offset_);
 	    if (node.flags & flag_is_assigned &&
 		node.depth == depth_ && node.prefix_key == prefix_key_ &&
-		top(getFirstConst(node.data)) == ordinal_) {
+		node.ordinal == ordinal_) {
 	      break;
 	    }
 	    offset_++;
@@ -306,7 +307,7 @@ namespace radix_cpp {
 	      offset = 0;
 	      h = calc_hash(depth, prefix, ordinal);
 	      continue;
-	    } else if (node.depth != depth || node.prefix_key != prefix || top(getFirstConst(node.data)) != ordinal) {
+	    } else if (node.depth != depth || node.prefix_key != prefix || node.ordinal != ordinal) {
 	      offset++;
 	      continue;
 	    }
@@ -377,7 +378,7 @@ namespace radix_cpp {
 	      ordinal++;
 	      offset = 0;
 	      h = calc_hash(depth_ + 1, prefix_key, ordinal);
-	    } else if (depth_ + 1 == node.depth && node.prefix_key == prefix_key && top(getFirstConst(node.data)) ==ordinal) {
+	    } else if (depth_ + 1 == node.depth && node.prefix_key == prefix_key && node.ordinal == ordinal) {
 	      break;
 	    } else {
 	      offset++;
@@ -531,7 +532,7 @@ namespace radix_cpp {
 	auto & node = read_node(h, offset);
 	if (!node.flags) {
 	  break; // not found
-	} else if (node.depth != depth || node.prefix_key != prefix_key || top(getFirstConst(node.data)) != ordinal) {
+	} else if (node.depth != depth || node.prefix_key != prefix_key || node.ordinal != ordinal) {
 	  // collision
 	  offset++;
 	} else if (node.flags & flag_is_final && getFirstConst(node.data) == key) {
@@ -692,8 +693,9 @@ namespace radix_cpp {
 	      new (static_cast<void*>(&(node.prefix_key))) key_type(std::move(prefix_key));
 	      node.flags = flag_is_assigned | flag_has_children;
 	    }
-	    node.depth = depth;
 	    node.hash = h;
+	    node.depth = depth;
+	    node.ordinal = static_cast<uint8_t>(ordinal);
 	    num_entries_++;
 	  } else if (is_final && !(node.flags & flag_is_final)) {
 	    // node.data = vt; // node exists, but it is not final: update data
