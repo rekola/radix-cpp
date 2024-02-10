@@ -274,8 +274,27 @@ namespace radix_cpp {
 	  depth_++;
 	  ordinal_ = offset_ = 0;
 	} else {
-	  repair_if_needed();
 	  size_t h = calc_hash(depth_, prefix_key_, ordinal_);
+	  if (table_size_ != table_->table_size_) {
+	    // table size has changed => repair the iterator
+	    table_size_ = table_->table_size_;
+	    offset_ = 0;
+	    while ( 1 ) {
+	      auto & node = table_->read_node(h, offset_);
+	      if (!node.flags) {
+#ifdef DEBUG
+		std::cerr << "repair failed\n";
+#endif
+		abort();
+	      } else if (node.flags & flag_is_assigned &&
+			 node.depth == depth_ && node.ordinal == ordinal_ &&
+			 node.prefix_key == prefix_key_) {
+		break;
+	      }
+	      offset_++;
+	    }
+	  }
+
 	  auto & node = table_->read_node(h, offset_);
 	  if (node.flags & flag_has_children) {
 	    depth_++;
@@ -347,52 +366,51 @@ namespace radix_cpp {
 
       void fast_forward() noexcept {
 	// first look for 0-length node (depth = ordinal = 0)
-	size_t h0 = calc_hash(0, key_type(), 0);
-	size_t offset0 = 0;
+	depth_ = 0;
+	offset_ = 0;
+	prefix_key_ = key_type();
+	ordinal_ = 0;
+	auto h0 = calc_hash(depth_, prefix_key_, ordinal_);
 	while (1) {
-	  auto & node = table_->read_node(h0, offset0);
+	  auto & node = table_->read_node(h0, offset_);
 	  if (!node.flags) break;
 	  else if (node.depth == 0) {
-	    set_indices(node.keyval, 0, key_type(), 0, offset0);
+	    set_ptr(node.keyval);
 	    return;
 	  } else {
-	    offset0++;
+	    offset_++;
 	  }
 	}
 
-	auto prefix_key = key_type();
-	while (1) {
-	  size_t ordinal = 0, offset = 0;
-	  size_t h = calc_hash(depth_ + 1, prefix_key, ordinal);
-	  while (ordinal < bucket_count) {
-	    auto & node = table_->read_node(h, offset);
-	    if (!node.flags) {
-	      ordinal++;
-	      offset = 0;
-	      h = calc_hash(depth_ + 1, prefix_key, ordinal);
-	    } else if (depth_ + 1 == node.depth && node.ordinal == ordinal && node.prefix_key == prefix_key) {
-	      break;
-	    } else {
-	      offset++;
-	    }
-	  }
-	  if (ordinal < bucket_count) {
-	    auto & node = table_->read_node(h, offset);
-	    if (node.prefix_key != prefix_key) {
+	depth_ = 1;
+	offset_ = 0;
+	size_t h = calc_hash(depth_, prefix_key_, ordinal_);
+       
+	while ( 1 ) {
+	  auto & node = table_->read_node(h, offset_);
+	  if (!node.flags) {
+	    ordinal_++;
+	    if (ordinal_ == bucket_count) {
+#ifdef DEBUG
+	      std::cerr << "fast forward: could not find next subiterator for prefix " << prefix_key_ << "\n";
+#endif
 	      abort();
 	    }
-	    set_indices(node.keyval, depth_ + 1, prefix_key, ordinal, offset);
-#ifdef DEBUG
-	    std::cerr << "ff: depth = " << depth_ << ", prefix_key = " << prefix_key_ << ", ordinal = " << ordinal_ << ", offset = " << offset_ << "\n";
-#endif
-	    if (node.keyval) break;
-	    prefix_key = append(prefix_key, ordinal);
+	    offset_ = 0;
+	    h = calc_hash(depth_, prefix_key_, ordinal_);
+	  } else if (depth_ == node.depth && ordinal_ == node.ordinal && prefix_key_ == node.prefix_key) {
+	    if (node.keyval) {
+	      set_ptr(node.keyval);
+	      return;
+	    } else {
+	      depth_++;
+	      prefix_key_ = append(prefix_key_, ordinal_);
+	      ordinal_ = 0;
+	      h = calc_hash(depth_, prefix_key_, ordinal_);
+	    }
 	  } else {
-#ifdef DEBUG
-	    std::cerr << "fast forward: could not find next subiterator for prefix " << prefix_key << "\n";
-#endif
-	    abort();
-	  }
+	    offset_++;
+	  }	  
 	}
       }
 
@@ -400,29 +418,6 @@ namespace radix_cpp {
       void set_ptr(value_type * ptr) { ptr_ = ptr; }
 
     private:
-      void repair_if_needed() noexcept {
-	if (table_size_ != table_->table_size_) {
-	  // table size has changed => repair the iterator
-	  table_size_ = table_->table_size_;
-	  offset_ = 0;
-	  size_t h = calc_hash(depth_, prefix_key_, ordinal_);
-
-	  while ( 1 ) {
-	    auto & node = table_->read_node(h, offset_);
-	    if (!node.flags) {
-#ifdef DEBUG
-	      std::cerr << "repair failed\n";
-#endif
-	      abort();
-	    } else if (node.flags & flag_is_assigned &&
-		       node.depth == depth_ && node.ordinal == ordinal_ &&
-		       node.prefix_key == prefix_key_) {
-	      break;
-	    }
-	    offset_++;
-	  }
-	}
-      }
       
       Self * table_;
       value_type * ptr_;
