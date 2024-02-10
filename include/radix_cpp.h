@@ -231,21 +231,24 @@ namespace radix_cpp {
       // end iterator
       Iterator(Self * table) noexcept
 	: table_(table),
+	  ptr_(nullptr),
 	  ordinal_(1),
 	  offset_(0),
 	  prefix_key_(),
 	  depth_(0),
 	  table_size_(table->table_size_) { }
       
-      Iterator(Self * table, uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset) noexcept
+      Iterator(Self * table, value_type * ptr, uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset) noexcept
 	: table_(table),
+	  ptr_(ptr),
 	  ordinal_(ordinal),
 	  offset_(offset),
 	  prefix_key_(std::move(prefix_key)),
 	  depth_(depth),
       	  table_size_(table->table_size_) { }
       
-      void set_indices(uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset) noexcept {
+      void set_indices(value_type * ptr, uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset) noexcept {
+	ptr_ = ptr;
 	depth_ = depth;
 	prefix_key_ = std::move(prefix_key);
 	ordinal_ = ordinal;
@@ -253,36 +256,15 @@ namespace radix_cpp {
       }
 
       reference operator*() const noexcept {
-	size_t h = calc_hash(depth_, prefix_key_, ordinal_);
-	size_t offset = offset_;
-	if (table_size_ != table_->table_size_) {
-	  // table size has changed => find correct offset
-	  while ( 1 ) {
-	    auto & node = table_->read_node(h, offset);
-	    if (!node.flags) {
-#ifdef DEBUG
-	      std::cerr << "repair failed\n";
-#endif
-	      abort();
-	    } else if (node.depth == depth_ && node.ordinal == ordinal_ && node.prefix_key == prefix_key_) {
-	      return *(node.keyval);
-	    }
-	    offset++;
-	  }
-	}
-	auto & node = table_->read_node(h, offset);
-	return *(node.keyval);
+	return *ptr_;
       }
       
       pointer operator->() noexcept {
-	repair_if_needed();
-	size_t h = calc_hash(depth_, prefix_key_, ordinal_);
-	auto & node = table_->read_node(h, offset_);
-	return node.keyval;
+	return ptr_;
       }
       
       Iterator& operator++() noexcept {
-	if ( depth_ == 0 && ordinal_ == 1) {
+	if (!ptr_) {
 	  return *this; // already ended
 	}
 	
@@ -312,7 +294,7 @@ namespace radix_cpp {
 	    // we have run through the whole range => go down the tree
 	    if (depth_ <= 1) {
 	      // become an end iterator
-	      set_indices(0, key_type{}, 1, 0);
+	      set_indices(nullptr, 0, key_type{}, 1, 0);
 	      return *this;
 	    } else {
 	      depth_--;
@@ -334,6 +316,7 @@ namespace radix_cpp {
 	      offset_++;
 	    } else if (node.keyval) {
 	      // a final Node was found
+	      set_ptr(node.keyval);
 	      return *this;
 	    } else {
 	      // non-final node => go up the tree
@@ -354,12 +337,12 @@ namespace radix_cpp {
       
       template <bool O>
       bool operator== (const Iterator<O>& o) const noexcept {
-	return depth_ == o.depth_ && ordinal_ == o.ordinal_ && offset_ == o.offset_ && prefix_key_ == o.prefix_key_;
+	return ptr_ == o.ptr_;
       }
       
       template <bool O>
       bool operator!= (const Iterator<O>& o) const noexcept {
-	return depth_ != o.depth_ || ordinal_ != o.ordinal_ || offset_ != o.offset_ || prefix_key_ != o.prefix_key_;
+	return ptr_ != o.ptr_;
       }
 
       void fast_forward() noexcept {
@@ -370,7 +353,7 @@ namespace radix_cpp {
 	  auto & node = table_->read_node(h0, offset0);
 	  if (!node.flags) break;
 	  else if (node.depth == 0) {
-	    set_indices(0, key_type(), 0, offset0);
+	    set_indices(node.keyval, 0, key_type(), 0, offset0);
 	    return;
 	  } else {
 	    offset0++;
@@ -398,7 +381,7 @@ namespace radix_cpp {
 	    if (node.prefix_key != prefix_key) {
 	      abort();
 	    }
-	    set_indices(depth_ + 1, prefix_key, ordinal, offset);
+	    set_indices(node.keyval, depth_ + 1, prefix_key, ordinal, offset);
 #ifdef DEBUG
 	    std::cerr << "ff: depth = " << depth_ << ", prefix_key = " << prefix_key_ << ", ordinal = " << ordinal_ << ", offset = " << offset_ << "\n";
 #endif
@@ -414,6 +397,7 @@ namespace radix_cpp {
       }
 
       size_t get_offset() const noexcept { return offset_; }
+      void set_ptr(value_type * ptr) { ptr_ = ptr; }
 
     private:
       void repair_if_needed() noexcept {
@@ -441,6 +425,7 @@ namespace radix_cpp {
       }
       
       Self * table_;
+      value_type * ptr_;
       size_t ordinal_, offset_;
       key_type prefix_key_;
       uint32_t depth_;
@@ -503,7 +488,7 @@ namespace radix_cpp {
 	  // collision
 	  offset++;
 	} else if (node.keyval) {
-	  return iterator(this, depth, prefix_key, ordinal, offset);
+	  return iterator(this, node.keyval, depth, prefix_key, ordinal, offset);
 	} else {
 	  break; // not final / wrong key
 	}
@@ -521,6 +506,7 @@ namespace radix_cpp {
 	is_new = false;
       } else {
 	node.keyval = arena_.alloc();
+	it.set_ptr(node.keyval);
 	new (static_cast<void*>(node.keyval)) value_type(k, std::move(obj));
 	num_final_entries_++;
       }
@@ -535,6 +521,7 @@ namespace radix_cpp {
       bool is_new = false;
       if (!node.keyval) {
 	node.keyval = arena_.alloc();
+	it.set_ptr(node.keyval);
 	new (static_cast<void*>(node.keyval)) value_type(std::move(vt));
 	is_new = true;
 	num_final_entries_++;
@@ -682,7 +669,7 @@ namespace radix_cpp {
 	    continue;
 	  }
 	  if (is_final) {
-	    it = iterator(this, depth, prefix_key, ordinal, offset);
+	    it = iterator(this, node.keyval, depth, prefix_key, ordinal, offset);
 	    first_hash = h;
 	    is_final = false;
 	  }
