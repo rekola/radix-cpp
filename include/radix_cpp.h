@@ -211,11 +211,11 @@ namespace radix_cpp {
 
   private:
     struct Node {
-      size_t keyval_idx;
+      value_type * keyval;
       size_t hash;
+      key_type prefix_key;
       uint32_t depth;
       uint8_t flags, ordinal;
-      key_type prefix_key;
     };
 
   public:
@@ -266,20 +266,20 @@ namespace radix_cpp {
 #endif
 	      abort();
 	    } else if (node.depth == depth_ && node.ordinal == ordinal_ && node.prefix_key == prefix_key_) {
-	      return table_->read_keyval(node.keyval_idx);
+	      return *(node.keyval);
 	    }
 	    offset++;
 	  }
 	}
 	auto & node = table_->read_node(h, offset);
-	return table_->read_keyval(node.keyval_idx);
+	return *(node.keyval);
       }
       
       pointer operator->() noexcept {
 	repair_if_needed();
 	size_t h = calc_hash(depth_, prefix_key_, ordinal_);
 	auto & node = table_->read_node(h, offset_);
-	return &(table_->read_keyval(node.keyval_idx));
+	return node.keyval;
       }
       
       Iterator& operator++() noexcept {
@@ -363,7 +363,7 @@ namespace radix_cpp {
 	return depth_ != o.depth_ || ordinal_ != o.ordinal_ || offset_ != o.offset_ || prefix_key_ != o.prefix_key_;
       }
 
-      void fast_forward() {
+      void fast_forward() noexcept {
 	// first look for 0-length node (depth = ordinal = 0)
 	size_t h0 = calc_hash(0, key_type(), 0);
 	size_t offset0 = 0;
@@ -414,10 +414,10 @@ namespace radix_cpp {
 	}
       }
 
-      size_t get_offset() const { return offset_; }
+      size_t get_offset() const noexcept { return offset_; }
 
     private:
-      void repair_if_needed() {
+      void repair_if_needed() noexcept {
 	if (table_size_ != table_->table_size_) {
 	  // table size has changed => repair the iterator
 	  table_size_ = table_->table_size_;
@@ -458,9 +458,8 @@ namespace radix_cpp {
 	num_inserts_(std::exchange(other.num_inserts_, 0)),
 	num_insert_collisions_(std::exchange(other.num_insert_collisions_, 0)),
 	table_size_(std::exchange(other.table_size_, 0)),
-	keyval_array_size_(std::exchange(other.keyval_array_size_, 0)),
 	nodes_(std::exchange(other.nodes_, nullptr)),
-	keyvals_(std::exchange(other.keyvals_, nullptr)) { }
+    	arena_(std::move(other.arena_)) { }
 
     Table & operator=(Table && other) noexcept {
       std::swap(num_entries_, other.num_entries);
@@ -468,34 +467,27 @@ namespace radix_cpp {
       std::swap(num_inserts_, other.num_inserts_);
       std::swap(num_insert_collisions_, other.num_insert_collisons_);
       std::swap(table_size_, other.table_size_);
-      std::swap(keyval_array_size_, other.keyval_array_size_);
       std::swap(nodes_, other.nodes_);
-      std::swap(keyvals_, other.keyvals_);
+      std::swap(arena_, other.arena_);
       return *this;
     }
     
     Table(const Table & other) = delete;
     Table& operator=(const Table & other) = delete;
 
-    ~Table() {
+    ~Table() noexcept {
       clear();
     }
 
     void clear() noexcept {
       for (size_t i = 0; i < table_size_; i++) {
 	auto & node = nodes_[i];
-	if (node.flags) {
-	  node.~Node();
-	  if (node.flags & flag_is_final) {
-	    keyvals_[node.keyval_idx].~value_type();
-	  }
-	}
+	if (node.flags) node.~Node();
       }
       std::free(nodes_);
-      std::free(keyvals_);
-      num_entries_ = num_final_entries_ = num_inserts_ = num_insert_collisions_ = table_size_ = keyval_array_size_ = 0;
+      num_entries_ = num_final_entries_ = num_inserts_ = num_insert_collisions_ = table_size_ = 0;
       nodes_ = nullptr;
-      keyvals_ = nullptr;
+      arena_.clear();
     }
 
     iterator find(const key_type & key) noexcept {
@@ -526,13 +518,13 @@ namespace radix_cpp {
       auto & node = read_node(hash, it.get_offset());
       bool is_new = true;	
       if (node.flags & flag_is_final) {
-	keyvals_[node.keyval_idx] = value_type(k, std::move(obj));
+	*(node.keyval) = value_type(k, std::move(obj));
 	is_new = false;
       } else {
-	node.keyval_idx = add_keyval();
-	auto & keyval = keyvals_[node.keyval_idx];
-	new (static_cast<void*>(&keyval)) value_type(k, std::move(obj));
+	node.keyval = arena_.alloc();
+	new (static_cast<void*>(node.keyval)) value_type(k, std::move(obj));
 	node.flags |= flag_is_final;
+	num_final_entries_++;
       }
       return std::make_pair(it, is_new);
     }
@@ -544,11 +536,11 @@ namespace radix_cpp {
       auto & node = read_node(hash, it.get_offset());
       bool is_new = false;
       if (!(node.flags & flag_is_final)) {
-	node.keyval_idx = add_keyval();
-	auto & keyval = keyvals_[node.keyval_idx];
-	new (static_cast<void*>(&keyval)) value_type(std::move(vt));
+	node.keyval = arena_.alloc();
+	new (static_cast<void*>(node.keyval)) value_type(std::move(vt));
 	node.flags |= flag_is_final;
 	is_new = true;
+	num_final_entries_++;
       }
       return std::make_pair(it, is_new);
     }
@@ -567,7 +559,7 @@ namespace radix_cpp {
     }
 
     template <typename Q = mapped_type>
-    typename std::enable_if<!std::is_void<Q>::value, Q&>::type operator[](const key_type& key) {
+    typename std::enable_if<!std::is_void<Q>::value, Q&>::type operator[](const key_type& key) noexcept {
       auto it = find(key);
       if (it != end()) {
 	return it->second;
@@ -606,6 +598,53 @@ namespace radix_cpp {
     size_t num_insert_collisions() const noexcept { return num_insert_collisions_; }
     
   private:
+    class Arena {
+    private:
+      static constexpr size_t page_size = 4096;
+      
+    public:
+      Arena() { }
+      Arena(Arena && other) noexcept
+	: n_(std::exchange(other.n_, 0)),
+	  pages_(std::move(other.pages_)) { }
+      ~Arena() noexcept {
+	clear();
+      }
+
+      Arena & operator=(Arena && other) noexcept {
+	std::swap(n_, other.n);
+	std::swap(pages_, other.pages_);
+	return *this;
+      }
+    
+      Arena(const Arena & other) = delete;
+      Arena& operator=(const Arena & other) = delete;
+
+      value_type * alloc() {
+	if (pages_.empty() || n_ == page_size) {
+	  pages_.push_back(reinterpret_cast<value_type*>(std::malloc(page_size * sizeof(value_type))));
+	  n_ = 0;
+	}
+	return pages_.back() + n_++;
+      }
+
+      void clear() noexcept {
+	for (size_t i = 0; i < pages_.size(); i++) {
+	  size_t n = i + 1 == pages_.size() ? n_ : page_size;
+	  auto data = pages_[i];
+	  for (size_t j = 0; j < n; j++) {
+	    data[j].~value_type();
+	  }
+	  std::free(data);
+	}
+	pages_.clear();
+      }
+      
+    private:
+      size_t n_ = 0;
+      std::vector<value_type*> pages_;
+    };
+    
     std::pair<iterator, size_t> create_nodes_for_key(key_type key) {
       if (!nodes_) {
 	init(bucket_count);
@@ -688,23 +727,6 @@ namespace radix_cpp {
       table_size_ = s;
       nodes_ = alloc_nodes(s);
     }
-    size_t add_keyval() {
-      if (keyval_array_size_ == 0) {
-	keyval_array_size_ = 256;
-	keyvals_ = reinterpret_cast<value_type*>(std::malloc(keyval_array_size_ * sizeof(value_type)));
-      } else if (num_final_entries_ + 1 == keyval_array_size_) {
-	keyval_array_size_ *= 2;
-	value_type * new_keyvals = reinterpret_cast<value_type*>(std::malloc(keyval_array_size_ * sizeof(value_type)));
-	for (size_t i = 0; i < num_final_entries_; i++) {
-	  auto & from = keyvals_[i], & to = new_keyvals[i];
-	  new (static_cast<void*>(&to)) value_type(std::move(from));
-	  from.~value_type();
-	}
-	std::free(keyvals_);
-	keyvals_ = new_keyvals;
-      }
-      return num_final_entries_++;
-    }
 
     static Node * alloc_nodes(size_t s) {
       auto nodes = reinterpret_cast<Node*>(std::malloc(s * sizeof(Node)));
@@ -741,10 +763,6 @@ namespace radix_cpp {
       return nodes_[(h + offset) & (table_size_ - 1)];
     }
 
-    value_type & read_keyval(size_t idx) {
-      return keyvals_[idx];
-    }
-
     // calc_hash() uses Murmur3 to calculate hash for a Node.
     // Murmur3 operations are specialized for both 32 bit and 64 bit size_t
     static inline size_t calc_hash(uint32_t depth, const key_type & prefix_key, size_t ordinal) noexcept {
@@ -759,9 +777,9 @@ namespace radix_cpp {
 
     size_t num_entries_ = 0, num_final_entries_ = 0;
     size_t num_inserts_ = 0, num_insert_collisions_ = 0;
-    size_t table_size_ = 0, keyval_array_size_ = 0;
+    size_t table_size_ = 0;
     Node* nodes_ = nullptr;
-    value_type* keyvals_ = nullptr;
+    Arena arena_;
   };
 
   template <typename Key>
