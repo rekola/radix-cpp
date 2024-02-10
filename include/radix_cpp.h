@@ -212,7 +212,6 @@ namespace radix_cpp {
   private:
     struct Node {
       value_type * keyval;
-      size_t hash;
       key_type prefix_key;
       uint32_t depth;
       uint8_t flags, ordinal;
@@ -233,7 +232,7 @@ namespace radix_cpp {
       Iterator(Self * table) noexcept
 	: table_(table),
 	  ptr_(nullptr),
-	  ordinal_(1),
+	  ordinal_(0),
 	  offset_(0),
 	  prefix_key_(),
 	  depth_(0) { }
@@ -685,7 +684,6 @@ namespace radix_cpp {
 	    if (!is_final) {
 	      node.flags |= flag_has_children;
 	    }
-	    node.hash = h;
 	    node.depth = static_cast<uint32_t>(depth);
 	    node.ordinal = static_cast<uint8_t>(ordinal);
 	    num_entries_++;
@@ -755,9 +753,10 @@ namespace radix_cpp {
       for (size_t i = 0; i < table_size_; i++) {
 	Node & node = nodes_[i];
 	if (node.flags) {
+	  size_t h = calc_hash(node.depth, node.prefix_key, node.ordinal);
 	  size_t offset = 0;
 	  while ( 1 ) {
-	    auto & output_node = new_nodes[(node.hash + offset) & (new_size - 1)];
+	    auto & output_node = new_nodes[(h + offset) & (new_size - 1)];
 	    if (output_node.flags) {
 	      offset++;
 	      num_insert_collisions_++;
