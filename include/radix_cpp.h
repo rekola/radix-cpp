@@ -235,8 +235,7 @@ namespace radix_cpp {
 	  ordinal_(1),
 	  offset_(0),
 	  prefix_key_(),
-	  depth_(0),
-	  table_size_(table->table_size_) { }
+	  depth_(0) { }
       
       Iterator(Self * table, value_type * ptr, uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset) noexcept
 	: table_(table),
@@ -244,8 +243,7 @@ namespace radix_cpp {
 	  ordinal_(ordinal),
 	  offset_(offset),
 	  prefix_key_(std::move(prefix_key)),
-	  depth_(depth),
-      	  table_size_(table->table_size_) { }
+	  depth_(depth) { }
       
       void set_indices(value_type * ptr, uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset) noexcept {
 	ptr_ = ptr;
@@ -274,28 +272,7 @@ namespace radix_cpp {
 	  depth_++;
 	  ordinal_ = offset_ = 0;
 	} else {
-	  size_t h = calc_hash(depth_, prefix_key_, ordinal_);
-	  if (table_size_ != table_->table_size_) {
-	    // table size has changed => repair the iterator
-	    table_size_ = table_->table_size_;
-	    offset_ = 0;
-	    while ( 1 ) {
-	      auto & node = table_->read_node(h, offset_);
-	      if (!node.flags) {
-#ifdef DEBUG
-		std::cerr << "repair failed\n";
-#endif
-		abort();
-	      } else if (node.flags & flag_is_assigned &&
-			 node.depth == depth_ && node.ordinal == ordinal_ &&
-			 node.prefix_key == prefix_key_) {
-		break;
-	      }
-	      offset_++;
-	    }
-	  }
-
-	  auto & node = table_->read_node(h, offset_);
+	  auto & node = repair_and_get_node();
 	  if (node.flags & flag_has_children) {
 	    depth_++;
 	    prefix_key_ = append(prefix_key_, ordinal_);
@@ -418,13 +395,30 @@ namespace radix_cpp {
       void set_ptr(value_type * ptr) { ptr_ = ptr; }
 
     private:
+      Node & repair_and_get_node() {
+	size_t h = calc_hash(depth_, prefix_key_, ordinal_);
+	auto & node0 = table_->read_node(h, offset_);
+	if (ptr_ == node0.keyval) return node0;
+	offset_ = 0;
+	while ( 1 ) {
+	  auto & node = table_->read_node(h, offset_);
+	  if (!node.flags) {
+#ifdef DEBUG
+	    std::cerr << "repair failed\n";
+#endif
+	    abort();
+	  } else if (ptr_ == node.keyval) {
+	    return node;
+	  }
+	  offset_++;
+	}
+      }
       
       Self * table_;
       value_type * ptr_;
       size_t ordinal_, offset_;
       key_type prefix_key_;
       uint32_t depth_;
-      size_t table_size_;
     };
     
     using iterator = Iterator<false>;
