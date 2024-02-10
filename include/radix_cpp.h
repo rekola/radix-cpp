@@ -89,7 +89,7 @@ namespace radix_cpp {
 
   inline std::string append(const std::string & key, size_t digit) {
     std::string key2 = key;
-    key2 += static_cast<uint8_t>(digit);
+    key2 += static_cast<char>(static_cast<uint8_t>(digit));
     return key2;
   }
   
@@ -485,7 +485,7 @@ namespace radix_cpp {
       for (size_t i = 0; i < table_size_; i++) {
 	auto & node = nodes_[i];
 	if (node.flags) {
-	  node.prefix_key.~key_type();
+	  node.~Node();
 	  if (node.flags & flag_is_final) {
 	    keyvals_[node.keyval_idx].~value_type();
 	  }
@@ -620,11 +620,7 @@ namespace radix_cpp {
       iterator it = end();
       size_t first_hash = 0;
       bool is_final = true;
-      
-#ifdef DEBUG
-      std::cerr << "inserting node " << key << "\n";
-#endif
-      
+            
       // insert digits from least significant to most significant
       // even if keysize is zero, add at least one digit (for empty strings)
       for ( size_t i = 0; i < (n == 0 ? 1 : n); i++, depth-- ) {
@@ -690,8 +686,7 @@ namespace radix_cpp {
     void init(size_t s) {
       if (nodes_) std::free(nodes_);
       table_size_ = s;
-      nodes_ = reinterpret_cast<Node*>(std::malloc(s * sizeof(Node)));
-      for (size_t i = 0; i < table_size_; i++) nodes_[i].flags = 0;
+      nodes_ = alloc_nodes(s);
     }
     size_t add_keyval() {
       if (keyval_array_size_ == 0) {
@@ -711,29 +706,35 @@ namespace radix_cpp {
       return num_final_entries_++;
     }
 
+    static Node * alloc_nodes(size_t s) {
+      auto nodes = reinterpret_cast<Node*>(std::malloc(s * sizeof(Node)));
+      for (size_t i = 0; i < s; i++) nodes[i].flags = 0;
+      return nodes;
+    }
+    
     void resize(size_t new_size) {
-      Self new_table;
-      new_table.init(new_size);
-      size_t collisions = 0;
+      auto new_nodes = alloc_nodes(new_size);
+      
       for (size_t i = 0; i < table_size_; i++) {
 	Node & node = nodes_[i];
 	if (node.flags) {
 	  size_t offset = 0;
 	  while ( 1 ) {
-	    auto & output_node = new_table.read_node(node.hash, offset);
+	    auto & output_node = new_nodes[(node.hash + offset) & (new_size - 1)];
 	    if (output_node.flags) {
 	      offset++;
-	      collisions++;
+	      num_insert_collisions_++;
 	    } else {
 	      std::swap(node, output_node);
+	      node.~Node();
 	      break;
 	    }
 	  }
 	}
       }
-      num_insert_collisions_ += collisions;
-      std::swap(nodes_, new_table.nodes_);
-      std::swap(table_size_, new_table.table_size_);
+      std::free(nodes_);
+      nodes_ = new_nodes;
+      table_size_ = new_size;
     }
 
     Node & read_node(size_t h, size_t offset) noexcept {
