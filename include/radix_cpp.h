@@ -211,6 +211,7 @@ namespace radix_cpp {
 
   private:
     struct Node {
+      size_t keyval_idx;
       size_t hash;
       uint32_t depth;
       uint8_t flags, ordinal;
@@ -265,18 +266,20 @@ namespace radix_cpp {
 #endif
 	      abort();
 	    } else if (node.depth == depth_ && node.ordinal == ordinal_ && node.prefix_key == prefix_key_) {
-	      break;
+	      return table_->read_keyval(node.keyval_idx);
 	    }
 	    offset++;
 	  }
 	}
-	return table_->read_keyval(h, offset);
+	auto & node = table_->read_node(h, offset);
+	return table_->read_keyval(node.keyval_idx);
       }
       
       pointer operator->() noexcept {
 	repair_if_needed();
 	size_t h = calc_hash(depth_, prefix_key_, ordinal_);
-	return &(table_->read_keyval(h, offset_));
+	auto & node = table_->read_node(h, offset_);
+	return &(table_->read_keyval(node.keyval_idx));
       }
       
       Iterator& operator++() noexcept {
@@ -455,6 +458,7 @@ namespace radix_cpp {
 	num_inserts_(std::exchange(other.num_inserts_, 0)),
 	num_insert_collisions_(std::exchange(other.num_insert_collisions_, 0)),
 	table_size_(std::exchange(other.table_size_, 0)),
+	keyval_array_size_(std::exchange(other.keyval_array_size_, 0)),
 	nodes_(std::exchange(other.nodes_, nullptr)),
 	keyvals_(std::exchange(other.keyvals_, nullptr)) { }
 
@@ -464,6 +468,7 @@ namespace radix_cpp {
       std::swap(num_inserts_, other.num_inserts_);
       std::swap(num_insert_collisions_, other.num_insert_collisons_);
       std::swap(table_size_, other.table_size_);
+      std::swap(keyval_array_size_, other.keyval_array_size_);
       std::swap(nodes_, other.nodes_);
       std::swap(keyvals_, other.keyvals_);
       return *this;
@@ -482,13 +487,13 @@ namespace radix_cpp {
 	if (node.flags) {
 	  node.prefix_key.~key_type();
 	  if (node.flags & flag_is_final) {
-	    keyvals_[i].~value_type();
+	    keyvals_[node.keyval_idx].~value_type();
 	  }
 	}
       }
       std::free(nodes_);
       std::free(keyvals_);
-      num_entries_ = num_final_entries_ = num_inserts_ = num_insert_collisions_ = table_size_ = 0;
+      num_entries_ = num_final_entries_ = num_inserts_ = num_insert_collisions_ = table_size_ = keyval_array_size_ = 0;
       nodes_ = nullptr;
       keyvals_ = nullptr;
     }
@@ -519,12 +524,13 @@ namespace radix_cpp {
     typename std::enable_if<!std::is_void<Q>::value, std::pair<iterator,bool>>::type insert_or_assign(const Key& k, Q && obj) {
       auto [ it, hash ] = create_nodes_for_key(k);
       auto & node = read_node(hash, it.get_offset());
-      auto & keyval = read_keyval(hash, it.get_offset());
       bool is_new = true;	
       if (node.flags & flag_is_final) {
-	keyval = value_type(k, std::move(obj));
+	keyvals_[node.keyval_idx] = value_type(k, std::move(obj));
 	is_new = false;
       } else {
+	node.keyval_idx = add_keyval();
+	auto & keyval = keyvals_[node.keyval_idx];
 	new (static_cast<void*>(&keyval)) value_type(k, std::move(obj));
 	node.flags |= flag_is_final;
       }
@@ -538,7 +544,8 @@ namespace radix_cpp {
       auto & node = read_node(hash, it.get_offset());
       bool is_new = false;
       if (!(node.flags & flag_is_final)) {
-	auto & keyval = read_keyval(hash, it.get_offset());
+	node.keyval_idx = add_keyval();
+	auto & keyval = keyvals_[node.keyval_idx];
 	new (static_cast<void*>(&keyval)) value_type(std::move(vt));
 	node.flags |= flag_is_final;
 	is_new = true;
@@ -629,9 +636,7 @@ namespace radix_cpp {
 	  if (!node.flags) {
 	    new (static_cast<void*>(&(node.prefix_key))) key_type(prefix_key);
 	    node.flags = flag_is_assigned;
-	    if (is_final) {
-	      num_final_entries_++;
-	    } else {
+	    if (!is_final) {
 	      node.flags |= flag_has_children;
 	    }
 	    node.hash = h;
@@ -643,9 +648,6 @@ namespace radix_cpp {
 	    offset++;
 	    num_insert_collisions_++;
 	    continue;
-	  } else if (is_final && !(node.flags & flag_is_final)) {
-	    num_final_entries_++;
-	    // don't set flag_is_final yet
 	  }
 	  if (is_final) {
 	    it = iterator(this, depth, prefix_key, ordinal, offset);
@@ -687,12 +689,28 @@ namespace radix_cpp {
     // size must be a power of two
     void init(size_t s) {
       if (nodes_) std::free(nodes_);
-      if (keyvals_) std::free(keyvals_);
-      nodes_ = reinterpret_cast<Node*>(std::malloc(s * sizeof(Node)));
-      keyvals_ = reinterpret_cast<value_type*>(std::malloc(s * sizeof(value_type)));
       table_size_ = s;
+      nodes_ = reinterpret_cast<Node*>(std::malloc(s * sizeof(Node)));
       for (size_t i = 0; i < table_size_; i++) nodes_[i].flags = 0;
     }
+    size_t add_keyval() {
+      if (keyval_array_size_ == 0) {
+	keyval_array_size_ = 256;
+	keyvals_ = reinterpret_cast<value_type*>(std::malloc(keyval_array_size_ * sizeof(value_type)));
+      } else if (num_final_entries_ + 1 == keyval_array_size_) {
+	keyval_array_size_ *= 2;
+	value_type * new_keyvals = reinterpret_cast<value_type*>(std::malloc(keyval_array_size_ * sizeof(value_type)));
+	for (size_t i = 0; i < num_final_entries_; i++) {
+	  auto & from = keyvals_[i], & to = new_keyvals[i];
+	  new (static_cast<void*>(&to)) value_type(std::move(from));
+	  from.~value_type();
+	}
+	std::free(keyvals_);
+	keyvals_ = new_keyvals;
+      }
+      return num_final_entries_++;
+    }
+
     void resize(size_t new_size) {
       Self new_table;
       new_table.init(new_size);
@@ -707,10 +725,6 @@ namespace radix_cpp {
 	      offset++;
 	      collisions++;
 	    } else {
-	      if (node.flags & flag_is_final) {
-		auto & output_keyval = new_table.read_keyval(node.hash, offset);
-		std::swap(keyvals_[i], output_keyval);
-	      }
 	      std::swap(node, output_node);
 	      break;
 	    }
@@ -719,7 +733,6 @@ namespace radix_cpp {
       }
       num_insert_collisions_ += collisions;
       std::swap(nodes_, new_table.nodes_);
-      std::swap(keyvals_, new_table.keyvals_);
       std::swap(table_size_, new_table.table_size_);
     }
 
@@ -727,8 +740,8 @@ namespace radix_cpp {
       return nodes_[(h + offset) & (table_size_ - 1)];
     }
 
-    value_type & read_keyval(size_t h, size_t offset) noexcept {
-      return keyvals_[(h + offset) & (table_size_ - 1)];
+    value_type & read_keyval(size_t idx) {
+      return keyvals_[idx];
     }
 
     // calc_hash() uses Murmur3 to calculate hash for a Node.
@@ -745,7 +758,7 @@ namespace radix_cpp {
 
     size_t num_entries_ = 0, num_final_entries_ = 0;
     size_t num_inserts_ = 0, num_insert_collisions_ = 0;
-    size_t table_size_ = 0;
+    size_t table_size_ = 0, keyval_array_size_ = 0;
     Node* nodes_ = nullptr;
     value_type* keyvals_ = nullptr;
   };
