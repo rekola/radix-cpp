@@ -14,8 +14,7 @@
 
 namespace radix_cpp {
   inline constexpr uint32_t flag_is_assigned = 1;
-  inline constexpr uint32_t flag_is_final = 2;
-  inline constexpr uint32_t flag_has_children = 4;
+  inline constexpr uint32_t flag_has_children = 2;
   
   inline uint8_t append(uint8_t key, size_t digit) noexcept {
     return static_cast<uint8_t>(digit);
@@ -333,7 +332,7 @@ namespace radix_cpp {
 	    } else if (node.depth != depth_ || node.ordinal != ordinal_ || node.prefix_key != prefix_key_) {
 	      // collision
 	      offset_++;
-	    } else if (node.flags & flag_is_final) {
+	    } else if (node.keyval) {
 	      // a final Node was found
 	      return *this;
 	    } else {
@@ -403,7 +402,7 @@ namespace radix_cpp {
 #ifdef DEBUG
 	    std::cerr << "ff: depth = " << depth_ << ", prefix_key = " << prefix_key_ << ", ordinal = " << ordinal_ << ", offset = " << offset_ << "\n";
 #endif
-	    if (node.flags & flag_is_final) break;
+	    if (node.keyval) break;
 	    prefix_key = append(prefix_key, ordinal);
 	  } else {
 #ifdef DEBUG
@@ -503,7 +502,7 @@ namespace radix_cpp {
 	} else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix_key) {
 	  // collision
 	  offset++;
-	} else if (node.flags & flag_is_final) {
+	} else if (node.keyval) {
 	  return iterator(this, depth, prefix_key, ordinal, offset);
 	} else {
 	  break; // not final / wrong key
@@ -517,13 +516,12 @@ namespace radix_cpp {
       auto [ it, hash ] = create_nodes_for_key(k);
       auto & node = read_node(hash, it.get_offset());
       bool is_new = true;	
-      if (node.flags & flag_is_final) {
+      if (node.keyval) {
 	*(node.keyval) = value_type(k, std::move(obj));
 	is_new = false;
       } else {
 	node.keyval = arena_.alloc();
 	new (static_cast<void*>(node.keyval)) value_type(k, std::move(obj));
-	node.flags |= flag_is_final;
 	num_final_entries_++;
       }
       return std::make_pair(it, is_new);
@@ -535,10 +533,9 @@ namespace radix_cpp {
       auto [ it, hash ] = create_nodes_for_key(getFirstConst(vt));
       auto & node = read_node(hash, it.get_offset());
       bool is_new = false;
-      if (!(node.flags & flag_is_final)) {
+      if (!node.keyval) {
 	node.keyval = arena_.alloc();
 	new (static_cast<void*>(node.keyval)) value_type(std::move(vt));
-	node.flags |= flag_is_final;
 	is_new = true;
 	num_final_entries_++;
       }
@@ -730,7 +727,11 @@ namespace radix_cpp {
 
     static Node * alloc_nodes(size_t s) {
       auto nodes = reinterpret_cast<Node*>(std::malloc(s * sizeof(Node)));
-      for (size_t i = 0; i < s; i++) nodes[i].flags = 0;
+      for (size_t i = 0; i < s; i++) {
+	auto & node = nodes[i];
+	node.flags = 0;
+	node.keyval = nullptr;
+      }
       return nodes;
     }
     
