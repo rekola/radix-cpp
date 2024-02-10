@@ -301,3 +301,26 @@ TEST_CASE( "utf8 strings work", "[utf8]" ) {
   REQUIRE(*it++ == "Å");
   REQUIRE(*it++ == "Ångström");
 }
+
+TEST_CASE( "erase with set", "[erase with set]" ) {
+  radix_cpp::set<std::string> S;
+  S.insert("k1");
+  S.insert("k2");
+
+  REQUIRE(S.size() == 2);
+  REQUIRE(S.find("k1") != S.end());
+  REQUIRE(S.find("k2") != S.end());
+
+  auto it = S.begin();
+  REQUIRE(*it == "k1");
+  it = S.erase(it);
+  REQUIRE(S.size() == 1);
+  REQUIRE(*it == "k2");
+  it = S.erase(it);
+  REQUIRE(S.size() == 0);
+  REQUIRE(it == S.end());
+  REQUIRE(S.begin() == S.end());
+
+  REQUIRE(S.find("k1") == S.end());
+  REQUIRE(S.find("k2") == S.end());
+}

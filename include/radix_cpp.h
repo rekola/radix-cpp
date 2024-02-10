@@ -15,7 +15,8 @@
 namespace radix_cpp {
   inline constexpr uint32_t flag_is_assigned = 1;
   inline constexpr uint32_t flag_has_children = 2;
-  
+  inline constexpr uint32_t flag_is_deleted = 4;
+   
   inline uint8_t append(uint8_t key, size_t digit) noexcept {
     return static_cast<uint8_t>(digit);
   }
@@ -284,7 +285,7 @@ namespace radix_cpp {
 	}
 
 	// iterate until a final Node is found
-	size_t h = calc_hash(depth_, prefix_key_, ordinal_);
+	size_t h = get_hash();
 	while ( 1 ) {
 	  if (ordinal_ == bucket_count) {
 	    // we have run through the whole range => go down the tree
@@ -298,7 +299,7 @@ namespace radix_cpp {
 	      prefix_key_ = parent_prefix_key;
 	      ordinal_ = parent_ordinal + 1;
 	      offset_ = 0;
-	      h = calc_hash(depth_, prefix_key_, ordinal_);
+	      h = get_hash();
 	    }
 	  } else {
 	    auto & node = table_->read_node(h, offset_);
@@ -306,10 +307,15 @@ namespace radix_cpp {
 	      // Node is not assigned
 	      ordinal_++;
 	      offset_ = 0;
-	      h = calc_hash(depth_, prefix_key_, ordinal_);
+	      h = get_hash();
 	    } else if (node.depth != depth_ || node.ordinal != ordinal_ || node.prefix_key != prefix_key_) {
 	      // collision
 	      offset_++;
+	    } else if (node.flags & flag_is_deleted) {
+	      // Node is deleted
+	      ordinal_++;
+	      offset_ = 0;
+	      h = get_hash();	      
 	    } else if (node.keyval) {
 	      // a final Node was found
 	      set_ptr(node.keyval);
@@ -319,7 +325,7 @@ namespace radix_cpp {
 	      depth_++;
 	      prefix_key_ = append(prefix_key_, ordinal_);
 	      ordinal_ = offset_ = 0;
-	      h = calc_hash(depth_, prefix_key_, ordinal_);
+	      h = get_hash();
 	    }
 	  }
 	}
@@ -347,13 +353,17 @@ namespace radix_cpp {
 	offset_ = 0;
 	prefix_key_ = key_type();
 	ordinal_ = 0;
-	auto h0 = calc_hash(depth_, prefix_key_, ordinal_);
+	auto h = get_hash();
 	while (1) {
-	  auto & node = table_->read_node(h0, offset_);
+	  auto & node = table_->read_node(h, offset_);
 	  if (!node.flags) break;
 	  else if (node.depth == 0) {
-	    set_ptr(node.keyval);
-	    return;
+	    if (node.flags & flag_is_deleted) {
+	      break;
+	    } else {
+	      set_ptr(node.keyval);
+	      return;
+	    }
 	  } else {
 	    offset_++;
 	  }
@@ -361,42 +371,48 @@ namespace radix_cpp {
 
 	depth_ = 1;
 	offset_ = 0;
-	size_t h = calc_hash(depth_, prefix_key_, ordinal_);
+	h = get_hash();
        
 	while ( 1 ) {
 	  auto & node = table_->read_node(h, offset_);
 	  if (!node.flags) {
 	    ordinal_++;
-	    if (ordinal_ == bucket_count) {
-#ifdef DEBUG
-	      std::cerr << "fast forward: could not find next subiterator for prefix " << prefix_key_ << "\n";
-#endif
-	      abort();
-	    }
 	    offset_ = 0;
-	    h = calc_hash(depth_, prefix_key_, ordinal_);
+	    h = get_hash();
 	  } else if (depth_ == node.depth && ordinal_ == node.ordinal && prefix_key_ == node.prefix_key) {
-	    if (node.keyval) {
+	    if (node.flags & flag_is_deleted) {
+	      ordinal_++;
+	      offset_ = 0;
+	      h = get_hash();
+	    } else if (node.keyval) {
 	      set_ptr(node.keyval);
 	      return;
 	    } else {
 	      depth_++;
 	      prefix_key_ = append(prefix_key_, ordinal_);
 	      ordinal_ = 0;
-	      h = calc_hash(depth_, prefix_key_, ordinal_);
+	      h = get_hash();
 	    }
 	  } else {
 	    offset_++;
-	  }	  
+	  }
+	  if (ordinal_ == bucket_count) {
+#ifdef DEBUG
+	    std::cerr << "fast forward: could not find next subiterator for prefix " << prefix_key_ << "\n";
+#endif
+	    abort();
+	  }
 	}
       }
 
       size_t get_offset() const noexcept { return offset_; }
+      size_t get_hash() const noexcept { return calc_hash(depth_, prefix_key_, ordinal_); }
+      
       void set_ptr(value_type * ptr) { ptr_ = ptr; }
 
     private:
       Node & repair_and_get_node() {
-	size_t h = calc_hash(depth_, prefix_key_, ordinal_);
+	size_t h = get_hash();
 	auto & node0 = table_->read_node(h, offset_);
 	if (ptr_ == node0.keyval) return node0;
 	offset_ = 0;
@@ -476,6 +492,8 @@ namespace radix_cpp {
 	} else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix_key) {
 	  // collision
 	  offset++;
+	} else if (node.flags & flag_is_deleted) {
+	  return end();
 	} else if (node.keyval) {
 	  return iterator(this, node.keyval, depth, prefix_key, ordinal, offset);
 	} else {
@@ -490,14 +508,19 @@ namespace radix_cpp {
       auto [ it, hash ] = create_nodes_for_key(k);
       auto & node = read_node(hash, it.get_offset());
       bool is_new = true;	
-      if (node.keyval) {
-	*(node.keyval) = value_type(k, std::move(obj));
-	is_new = false;
-      } else {
+      if (!node.keyval) {
 	node.keyval = arena_.alloc();
 	it.set_ptr(node.keyval);
 	new (static_cast<void*>(node.keyval)) value_type(k, std::move(obj));
 	num_final_entries_++;
+      } else {
+	*(node.keyval) = value_type(k, std::move(obj));
+	if (node.flags & flag_is_deleted) {
+	  node.flags ^= flag_is_deleted;
+	  num_final_entries_++;
+	} else {
+	  is_new = false;
+	}
       }
       return std::make_pair(it, is_new);
     }
@@ -507,13 +530,18 @@ namespace radix_cpp {
       value_type vt{std::forward<Args>(args)...};
       auto [ it, hash ] = create_nodes_for_key(getFirstConst(vt));
       auto & node = read_node(hash, it.get_offset());
-      bool is_new = false;
+      bool is_new = true;
       if (!node.keyval) {
 	node.keyval = arena_.alloc();
 	it.set_ptr(node.keyval);
 	new (static_cast<void*>(node.keyval)) value_type(std::move(vt));
-	is_new = true;
 	num_final_entries_++;
+      } else if (node.flags & flag_is_deleted) {
+	*(node.keyval) = vt;
+	node.flags ^= flag_is_deleted;
+	num_final_entries_++;
+      } else {
+	is_new = false;
       }
       return std::make_pair(it, is_new);
     }
@@ -550,6 +578,16 @@ namespace radix_cpp {
       } else {
 	throw std::out_of_range("key not found");
       }
+    }
+
+    iterator erase(iterator pos) {
+      size_t offset = pos.get_offset(), h = pos.get_hash();
+      auto & node = read_node(h, offset);
+      if (node.flags && !(node.flags & flag_is_deleted)) {
+	node.flags |= flag_is_deleted;
+	num_final_entries_--;
+      }
+      return ++pos;
     }
 
     iterator begin() noexcept {

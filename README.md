@@ -26,8 +26,7 @@ Iterators are automatically repaired if the underlying table changes,
 so they are stable.
 
 Currently only strings and unsigned integers are supported as keys,
-but more support is forthcoming. Also, deletion of keys is not yet
-possible.
+but more support is forthcoming.
 
 ### Time Complexity
 
@@ -75,7 +74,7 @@ prefix and ordinal is found, it is returned.
 
 ### Deletion
 
-Deletion is not yet implemented.
+Deletion works by using tombstones.
 
 ### Iteration
 
@@ -91,7 +90,6 @@ final node. The offset is used for probing in case of collisions.
 ### Limitations and Future Plans
 
 - Maximum key length is 2^32
-- Deletion is not yet implemented
 - No signed types (digits of two's complement numbers are not ordered correctly)
 - 32-bit support is untested
 - How to sort std::any?
