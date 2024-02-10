@@ -290,3 +290,14 @@ TEST_CASE( "iterator comparison works", "[iterator_cmp]") {
 
   REQUIRE(it == S.end());
 }
+
+TEST_CASE( "utf8 strings work", "[utf8]" ) {
+  radix_cpp::set<std::string> S;
+  S.insert("Ångström");
+  S.insert("Å");
+  S.insert("A");
+  auto it = S.begin();
+  REQUIRE(*it++ == "A");
+  REQUIRE(*it++ == "Å");
+  REQUIRE(*it++ == "Ångström");
+}
