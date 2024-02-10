@@ -18,7 +18,9 @@ multiple 8-bit digits, and each digit is inserted separately in to the
 hash table. The prefix key is also stored along with each digit to
 construct the prefix tree. According to benchmarks (given uint32_t
 keys) the radix-cpp set construction is much faster than that of
-std::set, and also faster than sorting the keys using std::sort.
+std::set, and also faster than sorting the keys using std::sort. Both
+std::sort and std::set use comparison sorthing so they have time
+complexity of O(n) = n log n.
 
 Iterators are automatically repaired if the underlying table changes,
 so they are stable.
@@ -102,7 +104,7 @@ To implement set and map for custom type, the following free functions must be d
 | Function | Description |
 | - | - |
 | key_type append(key_type key, size_t digit) | Returns a new key with digit appended as the new least significant digit |
-| std::pair<key_type, size_t> remove_top(key_type key) | Returns a pair with the numeric value of the least significant digit of the key and the key with the least significant digit removed |
+| std::pair<key_type, size_t> deconstruct(key_type key) | Returns a pair with the numeric value of the least significant digit of the key and the key with the least significant digit removed |
 | size_t keysize(key_type key) | Returns the number of digits in the key |
 
 Additionally, there must exist a specialization of std::hash for the custom key.
