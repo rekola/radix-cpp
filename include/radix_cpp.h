@@ -17,22 +17,48 @@ namespace radix_cpp {
   inline constexpr uint32_t flag_is_final = 2;
   inline constexpr uint32_t flag_has_children = 4;
   
+  inline uint8_t append(uint8_t key, size_t digit) noexcept {
+    return static_cast<uint8_t>(digit);
+  }
+
   inline std::pair<size_t, std::uint8_t> remove_top(uint8_t key) noexcept {
     return std::pair(key, 0);
+  }
+
+  inline uint16_t append(uint16_t key, size_t digit) noexcept {
+    return static_cast<uint16_t>((key << 8) | digit);
   }
 
   inline std::pair<size_t, std::uint16_t> remove_top(uint16_t key) noexcept {
     return std::pair(key & 0xff, key >> 8);
   }
 
+  inline uint32_t append(uint32_t key, size_t digit) noexcept {
+    return static_cast<uint32_t>((key << 8) | digit);
+  }
+
   inline std::pair<size_t, std::uint32_t> remove_top(uint32_t key) noexcept {
     return std::pair(key & 0xff, key >> 8);
+  }
+
+  inline uint64_t append(uint64_t key, size_t digit) noexcept {
+    return static_cast<uint64_t>((key << 8) | digit);
   }
 
   inline std::pair<size_t, std::uint64_t> remove_top(uint64_t key) noexcept {
     return std::pair(key & 0xff, key >> 8);
   }
 
+  inline float append(float key, size_t digit) noexcept {
+    union {
+      float f;
+      uint32_t i;
+    } u;
+    u.f = key;
+    u.i = append(u.i, digit);
+    return u.f;
+  }
+  
   inline std::pair<size_t, float> remove_top(float key) noexcept {
     union {
       float f;
@@ -40,6 +66,16 @@ namespace radix_cpp {
     } u;
     u.f = key;
     return remove_top(u.i);
+  }
+
+  inline double append(double key, size_t digit) noexcept {
+    union {
+      double f;
+      uint64_t i;
+    } u;
+    u.f = key;
+    u.i = append(u.i, digit);
+    return u.f;
   }
 
   inline std::pair<size_t, double> remove_top(double key) noexcept {
@@ -51,6 +87,12 @@ namespace radix_cpp {
     return remove_top(u.i);
   }
 
+  inline std::string append(const std::string & key, size_t digit) {
+    std::string key2 = key;
+    key2 += static_cast<uint8_t>(digit);
+    return key2;
+  }
+  
   inline std::pair<size_t, std::string> remove_top(const std::string & key) noexcept {
     if (key.empty()) {
       return std::pair(0, key);
@@ -253,7 +295,7 @@ namespace radix_cpp {
 	  auto & node = table_->read_node(h, offset_);
 	  if (node.flags & flag_has_children) {
 	    depth_++;
-	    prefix_key_ = getFirstConst(table_->read_keyval(h, offset_));
+	    prefix_key_ = append(prefix_key_, ordinal_);
 	    ordinal_ = 0;
 	  } else {
 	    ordinal_++;
@@ -294,7 +336,7 @@ namespace radix_cpp {
 	    } else {
 	      // non-final node => go up the tree
 	      depth_++;
-	      prefix_key_ = getFirstConst(table_->read_keyval(h, offset_));
+	      prefix_key_ = append(prefix_key_, ordinal_);
 	      ordinal_ = offset_ = 0;
 	      h = calc_hash(depth_, prefix_key_, ordinal_);
 	    }
@@ -359,7 +401,7 @@ namespace radix_cpp {
 	    std::cerr << "ff: depth = " << depth_ << ", prefix_key = " << prefix_key_ << ", ordinal = " << ordinal_ << ", offset = " << offset_ << "\n";
 #endif
 	    if (node.flags & flag_is_final) break;
-	    prefix_key = getFirstConst(table_->read_keyval(h, offset));
+	    prefix_key = append(prefix_key, ordinal);
 	  } else {
 #ifdef DEBUG
 	    std::cerr << "fast forward: could not find next subiterator for prefix " << prefix_key << "\n";
@@ -439,7 +481,9 @@ namespace radix_cpp {
 	auto & node = nodes_[i];
 	if (node.flags) {
 	  node.prefix_key.~key_type();
-	  keyvals_[i].~value_type();
+	  if (node.flags & flag_is_final) {
+	    keyvals_[i].~value_type();
+	  }
 	}
       }
       std::free(nodes_);
@@ -476,18 +520,14 @@ namespace radix_cpp {
       auto [ it, hash ] = create_nodes_for_key(k);
       auto & node = read_node(hash, it.get_offset());
       auto & keyval = read_keyval(hash, it.get_offset());
-      bool is_new = true;
-      if (!(node.flags & flag_is_assigned)) {
-	new (static_cast<void*>(&keyval)) value_type(k, std::move(obj));
-	node.flags = flag_is_assigned;
-      } else if (!(node.flags & flag_is_final)) {
-	node.flags |= flag_is_final;
-	keyval = value_type(k, std::move(obj)); // node exists, but it is not final: update the data
-      } else {
-	keyval = value_type(k, std::move(obj)); // node exists, and is final: update the data
+      bool is_new = true;	
+      if (node.flags & flag_is_final) {
+	keyval = value_type(k, std::move(obj));
 	is_new = false;
+      } else {
+	new (static_cast<void*>(&keyval)) value_type(k, std::move(obj));
+	node.flags |= flag_is_final;
       }
-      node.flags |= flag_is_final;
       return std::make_pair(it, is_new);
     }
 
@@ -496,18 +536,13 @@ namespace radix_cpp {
       value_type vt{std::forward<Args>(args)...};
       auto [ it, hash ] = create_nodes_for_key(getFirstConst(vt));
       auto & node = read_node(hash, it.get_offset());
-      auto & keyval = read_keyval(hash, it.get_offset());
-      bool is_new = true;
-      if (!(node.flags & flag_is_assigned)) {
+      bool is_new = false;
+      if (!(node.flags & flag_is_final)) {
+	auto & keyval = read_keyval(hash, it.get_offset());
 	new (static_cast<void*>(&keyval)) value_type(std::move(vt));
-	node.flags = flag_is_assigned;
-      } else if (!(node.flags & flag_is_final)) {
 	node.flags |= flag_is_final;
-	keyval = std::move(vt); // node exists, but it is not final: update data
-      } else {
-	is_new = false;
+	is_new = true;
       }
-      node.flags |= flag_is_final;
       return std::make_pair(it, is_new);
     }
 
@@ -592,15 +627,12 @@ namespace radix_cpp {
 	while ( 1 ) {
 	  auto & node = read_node(h, offset);
 	  if (!node.flags) {
+	    new (static_cast<void*>(&(node.prefix_key))) key_type(prefix_key);
+	    node.flags = flag_is_assigned;
 	    if (is_final) {
 	      num_final_entries_++;
-	      new (static_cast<void*>(&(node.prefix_key))) key_type(prefix_key);
-	      // don't set flag_is_assigned for final nodes
 	    } else {
-	      auto & keyval = read_keyval(h, offset);
-	      new (static_cast<void*>(&keyval)) value_type(mk_value_from_key(key));
-	      new (static_cast<void*>(&(node.prefix_key))) key_type(prefix_key);
-	      node.flags = flag_is_assigned | flag_has_children;
+	      node.flags |= flag_has_children;
 	    }
 	    node.hash = h;
 	    node.depth = static_cast<uint32_t>(depth);
@@ -675,9 +707,11 @@ namespace radix_cpp {
 	      offset++;
 	      collisions++;
 	    } else {
-	      auto & output_keyval = new_table.read_keyval(node.hash, offset);
+	      if (node.flags & flag_is_final) {
+		auto & output_keyval = new_table.read_keyval(node.hash, offset);
+		std::swap(keyvals_[i], output_keyval);
+	      }
 	      std::swap(node, output_node);
-	      std::swap(keyvals_[i], output_keyval);
 	      break;
 	    }
 	  }

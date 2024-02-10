@@ -101,6 +101,7 @@ To implement set and map for custom type, the following free functions must be d
 
 | Function | Description |
 | - | - |
+| key_type append(key_type key, size_t digit) | Returns a new key with digit appended as the new least significant digit |
 | std::pair<key_type, size_t> remove_top(key_type key) | Returns a pair with the numeric value of the least significant digit of the key and the key with the least significant digit removed |
 | size_t keysize(key_type key) | Returns the number of digits in the key |
 
