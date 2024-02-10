@@ -603,6 +603,7 @@ namespace radix_cpp {
       return iterator(this);
     }
 
+    bool empty() const noexcept { return num_final_entries_ == 0; }
     size_t size() const noexcept { return num_final_entries_; }
     size_t num_inserts() const noexcept { return num_inserts_; }
     size_t num_insert_collisions() const noexcept { return num_insert_collisions_; }
