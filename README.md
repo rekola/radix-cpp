@@ -34,6 +34,7 @@ but more support is forthcoming.
 | - | - | - |
 | Search | Θ(1) | O(n) |
 | Insert | Θ(w) | O(w*n) |
+| Delete | Θ(w) | O(w*n) |
 
 * w is the key length in bytes
 
@@ -59,6 +60,18 @@ radix-cpp has avarage complexity of Θ(1).
 
 radix-cpp uses Murmur3 as the hash function. The keys can be of
 arbitrary size.
+
+### Node
+
+```c++
+struct Node {
+  value_type * keyval;
+  size_t value_count;
+  key_type prefix_key;
+  uint32_t depth;
+  uint8_t flags, ordinal;
+};
+```
 
 ### Inserting
 
