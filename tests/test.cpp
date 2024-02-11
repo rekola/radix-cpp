@@ -366,3 +366,11 @@ TEST_CASE( "erasing prefix iterates to next", "[erase_prefix_next]") {
   REQUIRE(it != S.end());
   REQUIRE(*it == "ab");
 }
+
+TEST_CASE( "erase by value", "[erase_by_value]") {
+  radix_cpp::set<std::string> S;
+  S.insert("abba");
+  REQUIRE(S.erase("no-such-key") == 0);
+  REQUIRE(S.erase("abba") == 1);
+  REQUIRE(S.empty());
+}

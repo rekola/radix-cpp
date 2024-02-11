@@ -458,6 +458,10 @@ namespace radix_cpp {
       
       Self * table_;
       value_type * ptr_;
+
+      // cached values
+      // they are all obtainable from ptr_, but it's faster to cache them
+      // only temporarily can an iterator might point to a non-final Node (a node that has no ptr_)
       size_t ordinal_, offset_, hash_;
       key_type prefix_key_;
       uint32_t depth_;      
@@ -624,6 +628,16 @@ namespace radix_cpp {
 	return next_pos;
       } else {
 	return pos;
+      }
+    }
+
+    size_t erase(const key_type & key) {
+      auto it = find(key);
+      if (it != end()) {
+	erase(it);
+	return 1;
+      } else {
+	return 0;
       }
     }
 
