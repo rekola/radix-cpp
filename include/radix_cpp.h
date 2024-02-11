@@ -14,8 +14,7 @@
 
 namespace radix_cpp {
   inline constexpr uint32_t flag_is_assigned = 1;
-  inline constexpr uint32_t flag_has_children = 2;
-  inline constexpr uint32_t flag_is_deleted = 4;
+  inline constexpr uint32_t flag_is_deleted = 2;
    
   inline uint8_t append(uint8_t key, size_t digit) noexcept {
     return static_cast<uint8_t>(digit);
@@ -212,6 +211,7 @@ namespace radix_cpp {
   private:
     struct Node {
       value_type * keyval;
+      size_t value_count;
       key_type prefix_key;
       uint32_t depth;
       uint8_t flags, ordinal;
@@ -273,7 +273,7 @@ namespace radix_cpp {
 	  ordinal_ = offset_ = 0;
 	} else {
 	  auto & node = repair_and_get_node();
-	  if (node.flags & flag_has_children) {
+	  if (node.value_count > 1) {
 	    depth_++;
 	    prefix_key_ = append(prefix_key_, ordinal_);
 	    ordinal_ = 0;
@@ -314,7 +314,7 @@ namespace radix_cpp {
 	      // a final Node was found
 	      set_ptr(node.keyval);
 	      return *this;
-	    } else if (node.flags & flag_has_children) {
+	    } else if (node.value_count) {
 	      // non-final node => go up the tree
 	      depth_++;
 	      prefix_key_ = append(prefix_key_, ordinal_);
@@ -397,7 +397,7 @@ namespace radix_cpp {
 	      if (node.keyval && !(node.flags & flag_is_deleted)) {
 		set_ptr(node.keyval);
 		return;
-	      } else if (node.flags & flag_has_children) {
+	      } else if (node.value_count) {
 		depth_++;
 		prefix_key_ = append(prefix_key_, ordinal_);
 		ordinal_ = 0;
@@ -595,6 +595,7 @@ namespace radix_cpp {
       auto & node = read_node(h, offset);
       if (node.keyval && !(node.flags & flag_is_deleted)) {
 	node.flags |= flag_is_deleted;
+	node.value_count--;
 	num_final_entries_--;
       }
       return ++pos;
@@ -693,9 +694,6 @@ namespace radix_cpp {
 	  if (!node.flags) {
 	    new (static_cast<void*>(&(node.prefix_key))) key_type(prefix_key);
 	    node.flags = flag_is_assigned;
-	    if (!is_final) {
-	      node.flags |= flag_has_children;
-	    }
 	    node.depth = static_cast<uint32_t>(depth);
 	    node.ordinal = static_cast<uint8_t>(ordinal);
 	    num_entries_++;
@@ -705,6 +703,7 @@ namespace radix_cpp {
 	    num_insert_collisions_++;
 	    continue;
 	  }
+	  node.value_count++;
 	  if (is_final) {
 	    it = iterator(this, node.keyval, depth, prefix_key, ordinal, offset);
 	    first_hash = h;
@@ -755,6 +754,7 @@ namespace radix_cpp {
 	auto & node = nodes[i];
 	node.flags = 0;
 	node.keyval = nullptr;
+	node.value_count = 0;
       }
       return nodes;
     }
