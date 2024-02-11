@@ -234,25 +234,19 @@ namespace radix_cpp {
 	  ptr_(nullptr),
 	  ordinal_(0),
 	  offset_(0),
+	  hash_(0),
 	  prefix_key_(),
 	  depth_(0) { }
       
-      Iterator(Self * table, value_type * ptr, uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset) noexcept
+      Iterator(Self * table, value_type * ptr, uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset, size_t hash) noexcept
 	: table_(table),
 	  ptr_(ptr),
 	  ordinal_(ordinal),
 	  offset_(offset),
+	  hash_(hash),
 	  prefix_key_(std::move(prefix_key)),
 	  depth_(depth) { }
       
-      void set_indices(value_type * ptr, uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset) noexcept {
-	ptr_ = ptr;
-	depth_ = depth;
-	prefix_key_ = std::move(prefix_key);
-	ordinal_ = ordinal;
-	offset_ = offset;
-      }
-
       reference operator*() const noexcept {
 	return *ptr_;
       }
@@ -284,13 +278,12 @@ namespace radix_cpp {
 	}
 
 	// iterate until a final Node is found
-	size_t h = get_hash();
+	hash_ = calc_hash(depth_, prefix_key_, ordinal_);
 	while ( 1 ) {
 	  if (ordinal_ == bucket_count) {
 	    // we have run through the whole range => go down the tree
 	    if (depth_ <= 1) {
-	      // become an end iterator
-	      set_indices(nullptr, 0, key_type{}, 1, 0);
+	      clear(); // become an end iterator
 	      return *this;
 	    } else {
 	      depth_--;
@@ -298,15 +291,15 @@ namespace radix_cpp {
 	      prefix_key_ = parent_prefix_key;
 	      ordinal_ = parent_ordinal + 1;
 	      offset_ = 0;
-	      h = get_hash();
+	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
 	    }
 	  } else {
-	    auto & node = table_->read_node(h, offset_);
+	    auto & node = table_->read_node(hash_, offset_);
 	    if (!node.flags) {
 	      // Node is not assigned
 	      ordinal_++;
 	      offset_ = 0;
-	      h = get_hash();
+	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
 	    } else if (node.depth != depth_ || node.ordinal != ordinal_ || node.prefix_key != prefix_key_) {
 	      // collision
 	      offset_++;
@@ -319,12 +312,12 @@ namespace radix_cpp {
 	      depth_++;
 	      prefix_key_ = append(prefix_key_, ordinal_);
 	      ordinal_ = offset_ = 0;
-	      h = get_hash();
+	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
 	    } else {
 	      // Node is deleted
 	      ordinal_++;
 	      offset_ = 0;
-	      h = get_hash();
+	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
 	    }
 	  }
 	}
@@ -352,9 +345,10 @@ namespace radix_cpp {
 	offset_ = 0;
 	prefix_key_ = key_type();
 	ordinal_ = 0;
-	auto h = get_hash();
+	hash_ = calc_hash(depth_, prefix_key_, ordinal_);
+
 	while (1) {
-	  auto & node = table_->read_node(h, offset_);
+	  auto & node = table_->read_node(hash_, offset_);
 	  if (!node.flags) break;
 	  else if (node.depth == 0) {
 	    if (node.flags & flag_is_deleted) {
@@ -370,29 +364,20 @@ namespace radix_cpp {
 
 	depth_ = 1;
 	offset_ = 0;
-	h = get_hash();
+ 	hash_ = calc_hash(depth_, prefix_key_, ordinal_);
        
 	while ( 1 ) {
 	  if (ordinal_ == bucket_count) {
-	    // broken branch
-	    if (depth_ <= 1) {
-	      // become an end iterator
-	      set_indices(nullptr, 0, key_type{}, 1, 0);
-	      return;
-	    } else {
-	      depth_--;
-	      auto [ parent_ordinal, parent_prefix_key ] = deconstruct(prefix_key_);
-	      prefix_key_ = parent_prefix_key;
-	      ordinal_ = parent_ordinal + 1;
-	      offset_ = 0;
-	      h = get_hash();
-	    }
+#ifdef DEBUG
+	    std::cerr << "fast-forward failed\n";
+	    abort();
+#endif
 	  } else {
-	    auto & node = table_->read_node(h, offset_);
+	    auto & node = table_->read_node(hash_, offset_);
 	    if (!node.flags) {
 	      ordinal_++;
 	      offset_ = 0;
-	      h = get_hash();
+	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
 	    } else if (depth_ == node.depth && ordinal_ == node.ordinal && prefix_key_ == node.prefix_key) {
 	      if (node.keyval && !(node.flags & flag_is_deleted)) {
 		set_ptr(node.keyval);
@@ -401,12 +386,12 @@ namespace radix_cpp {
 		depth_++;
 		prefix_key_ = append(prefix_key_, ordinal_);
 		ordinal_ = 0;
-		h = get_hash();
+		hash_ = calc_hash(depth_, prefix_key_, ordinal_);
 	      } else {
 		// deleted
 		ordinal_++;
 		offset_ = 0;
-		h = get_hash();
+		hash_ = calc_hash(depth_, prefix_key_, ordinal_);
 	      }
 	    } else {
 	      offset_++;
@@ -414,20 +399,51 @@ namespace radix_cpp {
 	  }
 	}
       }
-      
+
+      void down() {
+	if (depth_ <= 1) {
+	  clear(); // become an end iterator
+	} else {
+	  depth_--;
+	  auto [ parent_ordinal, parent_prefix_key ] = deconstruct(prefix_key_);
+	  prefix_key_ = parent_prefix_key;
+	  ordinal_ = parent_ordinal;
+	  offset_ = 0;
+	  ptr_ = nullptr;
+	  hash_ = calc_hash(depth_, prefix_key_, ordinal_);
+	  while ( 1 ) {
+	    auto & node = table_->read_node(hash_, offset_);
+	    if (!node.flags) {
+	      abort();
+	    } else if (depth_ == node.depth && ordinal_ == node.ordinal && prefix_key_ == node.prefix_key) {
+	      break;
+	    } else {
+	      offset_++;
+	    }
+	  }
+	}
+      }
       size_t get_offset() const noexcept { return offset_; }
-      size_t get_hash() const noexcept { return calc_hash(depth_, prefix_key_, ordinal_); }
+      size_t get_hash() const noexcept { return hash_; }
       
       void set_ptr(value_type * ptr) { ptr_ = ptr; }
       
     private:
+      void clear() {
+	ptr_ = nullptr;
+	depth_ = 0;
+	prefix_key_ = key_type{};
+	ordinal_ = 0;
+	offset_ = 0;
+	hash_ = 0;
+      }
+
       Node & repair_and_get_node() {
-	size_t h = get_hash();
-	auto & node0 = table_->read_node(h, offset_);
+	auto & node0 = table_->read_node(hash_, offset_);
 	if (ptr_ == node0.keyval) return node0;
 	offset_ = 0;
 	while ( 1 ) {
-	  auto & node = table_->read_node(h, offset_);
+	  auto & node = table_->read_node(hash_, offset_);
 	  if (!node.flags) {
 #ifdef DEBUG
 	    std::cerr << "repair failed\n";
@@ -442,9 +458,9 @@ namespace radix_cpp {
       
       Self * table_;
       value_type * ptr_;
-      size_t ordinal_, offset_;
+      size_t ordinal_, offset_, hash_;
       key_type prefix_key_;
-      uint32_t depth_;
+      uint32_t depth_;      
     };
     
     using iterator = Iterator<false>;
@@ -505,7 +521,7 @@ namespace radix_cpp {
 	} else if (node.flags & flag_is_deleted) {
 	  return end();
 	} else if (node.keyval) {
-	  return iterator(this, node.keyval, depth, prefix_key, ordinal, offset);
+	  return iterator(this, node.keyval, depth, prefix_key, ordinal, offset, h);
 	} else {
 	  break; // not final / wrong key
 	}
@@ -591,14 +607,24 @@ namespace radix_cpp {
     }
 
     iterator erase(iterator pos) {
-      size_t offset = pos.get_offset(), h = pos.get_hash();
-      auto & node = read_node(h, offset);
+      auto & node = read_node(pos.get_hash(), pos.get_offset());
       if (node.keyval && !(node.flags & flag_is_deleted)) {
+	auto next_pos = ++pos;
+	
 	node.flags |= flag_is_deleted;
 	node.value_count--;
 	num_final_entries_--;
+
+	pos.down();
+	while ( pos != end() ) {
+	  auto & node = read_node(pos.get_hash(), pos.get_offset());
+	  node.value_count--;
+	  pos.down();
+	}
+	return next_pos;
+      } else {
+	return pos;
       }
-      return ++pos;
     }
 
     iterator begin() noexcept {
@@ -705,7 +731,7 @@ namespace radix_cpp {
 	  }
 	  node.value_count++;
 	  if (is_final) {
-	    it = iterator(this, node.keyval, depth, prefix_key, ordinal, offset);
+	    it = iterator(this, node.keyval, depth, prefix_key, ordinal, offset, h);
 	    first_hash = h;
 	    is_final = false;
 	  }
