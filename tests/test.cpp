@@ -346,3 +346,23 @@ TEST_CASE( "erase shared prefix", "[erase_shared_prefix]") {
   REQUIRE(it != S.end());
   REQUIRE(*it == "ab");
 }
+
+TEST_CASE( "erase iterates to next", "[erase_next]") {
+  radix_cpp::set<uint32_t> S;
+  S.insert(1);
+  S.insert(2);
+  auto it = S.begin();
+  it = S.erase(it);
+  REQUIRE(it != S.end());
+  REQUIRE(*it == 2);
+}
+
+TEST_CASE( "erasing prefix iterates to next", "[erase_prefix_next]") {
+  radix_cpp::set<std::string> S;
+  S.insert("a");
+  S.insert("ab");
+  auto it = S.begin();
+  it = S.erase(it);
+  REQUIRE(it != S.end());
+  REQUIRE(*it == "ab");
+}
