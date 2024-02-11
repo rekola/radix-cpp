@@ -302,7 +302,7 @@ TEST_CASE( "utf8 strings work", "[utf8]" ) {
   REQUIRE(*it++ == "Ångström");
 }
 
-TEST_CASE( "erase with set", "[erase with set]" ) {
+TEST_CASE( "erase with set", "[erase_set]" ) {
   radix_cpp::set<std::string> S;
   S.insert("k1");
   S.insert("k2");
@@ -323,4 +323,26 @@ TEST_CASE( "erase with set", "[erase with set]" ) {
 
   REQUIRE(S.find("k1") == S.end());
   REQUIRE(S.find("k2") == S.end());
+}
+
+TEST_CASE( "erase empty", "[erase_empty]" ) {
+  radix_cpp::set<std::string> S;
+  S.insert("");
+  S.insert("k1");
+  S.insert("k2");
+  auto it = S.begin();
+  it = S.erase(it);
+  REQUIRE(it == S.begin());
+  REQUIRE(*it == "k1");
+}
+
+TEST_CASE( "erase shared prefix", "[erase_shared_prefix]") {
+  radix_cpp::set<std::string> S;
+  S.insert("a");
+  S.insert("ab");
+  auto it = S.begin();
+  S.erase(it);
+  it = S.find("ab");
+  REQUIRE(it != S.end());
+  REQUIRE(*it == "ab");
 }

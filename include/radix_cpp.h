@@ -6,7 +6,7 @@
 #include <string>
 #include <stdexcept>
 
-// #define DEBUG
+#define DEBUG
 
 #ifdef DEBUG
 #include <iostream>
@@ -310,20 +310,20 @@ namespace radix_cpp {
 	    } else if (node.depth != depth_ || node.ordinal != ordinal_ || node.prefix_key != prefix_key_) {
 	      // collision
 	      offset_++;
-	    } else if (node.flags & flag_is_deleted) {
-	      // Node is deleted
-	      ordinal_++;
-	      offset_ = 0;
-	      h = get_hash();	      
-	    } else if (node.keyval) {
+	    } else if (node.keyval && !(node.flags & flag_is_deleted)) {
 	      // a final Node was found
 	      set_ptr(node.keyval);
 	      return *this;
-	    } else {
+	    } else if (node.flags & flag_has_children) {
 	      // non-final node => go up the tree
 	      depth_++;
 	      prefix_key_ = append(prefix_key_, ordinal_);
 	      ordinal_ = offset_ = 0;
+	      h = get_hash();
+	    } else {
+	      // Node is deleted
+	      ordinal_++;
+	      offset_ = 0;
 	      h = get_hash();
 	    }
 	  }
@@ -345,7 +345,7 @@ namespace radix_cpp {
       bool operator!= (const Iterator<O>& o) const noexcept {
 	return ptr_ != o.ptr_;
       }
-
+      
       void fast_forward() noexcept {
 	// first look for 0-length node (depth = ordinal = 0)
 	depth_ = 0;
@@ -373,42 +373,53 @@ namespace radix_cpp {
 	h = get_hash();
        
 	while ( 1 ) {
-	  auto & node = table_->read_node(h, offset_);
-	  if (!node.flags) {
-	    ordinal_++;
-	    offset_ = 0;
-	    h = get_hash();
-	  } else if (depth_ == node.depth && ordinal_ == node.ordinal && prefix_key_ == node.prefix_key) {
-	    if (node.flags & flag_is_deleted) {
-	      ordinal_++;
-	      offset_ = 0;
-	      h = get_hash();
-	    } else if (node.keyval) {
-	      set_ptr(node.keyval);
+	  if (ordinal_ == bucket_count) {
+	    // broken branch
+	    if (depth_ <= 1) {
+	      // become an end iterator
+	      set_indices(nullptr, 0, key_type{}, 1, 0);
 	      return;
 	    } else {
-	      depth_++;
-	      prefix_key_ = append(prefix_key_, ordinal_);
-	      ordinal_ = 0;
+	      depth_--;
+	      auto [ parent_ordinal, parent_prefix_key ] = deconstruct(prefix_key_);
+	      prefix_key_ = parent_prefix_key;
+	      ordinal_ = parent_ordinal + 1;
+	      offset_ = 0;
 	      h = get_hash();
 	    }
 	  } else {
-	    offset_++;
-	  }
-	  if (ordinal_ == bucket_count) {
-#ifdef DEBUG
-	    std::cerr << "fast forward: could not find next subiterator for prefix " << prefix_key_ << "\n";
-#endif
-	    abort();
+	    auto & node = table_->read_node(h, offset_);
+	    if (!node.flags) {
+	      ordinal_++;
+	      offset_ = 0;
+	      h = get_hash();
+	    } else if (depth_ == node.depth && ordinal_ == node.ordinal && prefix_key_ == node.prefix_key) {
+	      if (node.keyval && !(node.flags & flag_is_deleted)) {
+		set_ptr(node.keyval);
+		return;
+	      } else if (node.flags & flag_has_children) {
+		depth_++;
+		prefix_key_ = append(prefix_key_, ordinal_);
+		ordinal_ = 0;
+		h = get_hash();
+	      } else {
+		// deleted
+		ordinal_++;
+		offset_ = 0;
+		h = get_hash();
+	      }
+	    } else {
+	      offset_++;
+	    }
 	  }
 	}
       }
-
+      
       size_t get_offset() const noexcept { return offset_; }
       size_t get_hash() const noexcept { return calc_hash(depth_, prefix_key_, ordinal_); }
       
       void set_ptr(value_type * ptr) { ptr_ = ptr; }
-
+      
     private:
       Node & repair_and_get_node() {
 	size_t h = get_hash();
@@ -582,7 +593,7 @@ namespace radix_cpp {
     iterator erase(iterator pos) {
       size_t offset = pos.get_offset(), h = pos.get_hash();
       auto & node = read_node(h, offset);
-      if (node.flags && !(node.flags & flag_is_deleted)) {
+      if (node.keyval && !(node.flags & flag_is_deleted)) {
 	node.flags |= flag_is_deleted;
 	num_final_entries_--;
       }
