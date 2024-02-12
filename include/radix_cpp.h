@@ -214,7 +214,7 @@ namespace radix_cpp {
       size_t value_count;
       key_type prefix_key;
       uint32_t depth;
-      uint8_t flags, ordinal;
+      uint8_t ordinal;
     };
 
   public:
@@ -295,7 +295,7 @@ namespace radix_cpp {
 	    }
 	  } else {
 	    auto & node = table_->read_node(hash_, offset_);
-	    if (!node.flags) {
+	    if (!node.value_count) {
 	      // Node is not assigned
 	      ordinal_++;
 	      offset_ = 0;
@@ -307,16 +307,11 @@ namespace radix_cpp {
 	      // a final Node was found
 	      set_ptr(node.keyval);
 	      return *this;
-	    } else if (node.value_count) {
+	    } else {
 	      // non-final node => go up the tree
 	      depth_++;
 	      prefix_key_ = append(prefix_key_, ordinal_);
 	      ordinal_ = offset_ = 0;
-	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
-	    } else {
-	      // Node is deleted
-	      ordinal_++;
-	      offset_ = 0;
 	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
 	    }
 	  }
@@ -349,7 +344,7 @@ namespace radix_cpp {
 
 	while (1) {
 	  auto & node = table_->read_node(hash_, offset_);
-	  if (node.flags) {
+	  if (node.value_count) {
 	    if (node.depth != 0) {
 	      // collision
 	      offset_++;
@@ -374,7 +369,8 @@ namespace radix_cpp {
 #endif
 	  } else {
 	    auto & node = table_->read_node(hash_, offset_);
-	    if (!node.flags) {
+	    if (!node.value_count) {
+	      // unassigned
 	      ordinal_++;
 	      offset_ = 0;
 	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
@@ -384,15 +380,10 @@ namespace radix_cpp {
 	    } else if (node.keyval) {
 	      set_ptr(node.keyval);
 	      return;
-	    } else if (node.value_count) {
+	    } else {
 	      depth_++;
 	      prefix_key_ = append(prefix_key_, ordinal_);
 	      ordinal_ = 0;
-	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
-	    } else {
-	      // deleted
-	      ordinal_++;
-	      offset_ = 0;
 	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
 	    }
 	  }
@@ -412,7 +403,10 @@ namespace radix_cpp {
 	  hash_ = calc_hash(depth_, prefix_key_, ordinal_);
 	  while ( 1 ) {
 	    auto & node = table_->read_node(hash_, offset_);
-	    if (!node.flags) {
+	    if (!node.value_count) {
+#ifdef DEBUG
+	      std::cerr << "down() failed\n";
+#endif
 	      abort();
 	    } else if (depth_ == node.depth && ordinal_ == node.ordinal && prefix_key_ == node.prefix_key) {
 	      break;
@@ -443,7 +437,7 @@ namespace radix_cpp {
 	offset_ = 0;
 	while ( 1 ) {
 	  auto & node = table_->read_node(hash_, offset_);
-	  if (!node.flags) {
+	  if (!node.value_count) {
 #ifdef DEBUG
 	    std::cerr << "repair failed\n";
 #endif
@@ -463,7 +457,7 @@ namespace radix_cpp {
       // only temporarily can an iterator might point to a non-final Node (a node that has no ptr_)
       size_t ordinal_, offset_, hash_;
       key_type prefix_key_;
-      uint32_t depth_;      
+      uint32_t depth_;
     };
     
     using iterator = Iterator<false>;
@@ -500,7 +494,12 @@ namespace radix_cpp {
     void clear() noexcept {
       for (size_t i = 0; i < table_size_; i++) {
 	auto & node = nodes_[i];
-	if (node.flags) node.~Node();
+	if (node.value_count) {
+	  node.prefix_key.~key_type();
+	  if (node.keyval) {
+	    node.keyval->~value_type();
+	  }
+	}
       }
       std::free(nodes_);
       num_entries_ = num_final_entries_ = num_inserts_ = num_insert_collisions_ = table_size_ = 0;
@@ -516,7 +515,7 @@ namespace radix_cpp {
 
       while ( 1 ) {
 	auto & node = read_node(h, offset);
-	if (!node.flags) {
+	if (!node.value_count) {
 	  break; // not found
 	} else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix_key) {
 	  // collision
@@ -600,32 +599,55 @@ namespace radix_cpp {
 
     iterator erase(iterator pos) {
       auto & node = read_node(pos.get_hash(), pos.get_offset());
-      if (node.keyval) {
-	auto next_pos = ++pos;
-
-	node.keyval = nullptr;
-	node.value_count--;
-	if (!node.value_count) num_entries_--;
-	num_final_entries_--;
-
-	pos.down();
-	while ( pos != end() ) {
-	  auto & node = read_node(pos.get_hash(), pos.get_offset());
-	  node.value_count--;
-	  if (!node.value_count) num_entries_--;
-	  pos.down();
-	}
-	
-	return next_pos;
-      } else {
-	return pos;
+      if (!node.value_count || !node.keyval) {
+#ifdef DEBUG
+	std::cerr << "invalid parameter to erase()\n";
+#endif
+	abort();
       }
+      auto next_pos = pos;
+      ++next_pos;
+
+      node.keyval->~value_type();
+      node.keyval = nullptr;
+      
+      node.value_count--;
+      if (!node.value_count) {
+	node.prefix_key.~key_type();
+	num_entries_--;
+      }
+      num_final_entries_--;
+      
+      pos.down();
+      while ( pos != end() ) {
+	auto & node = read_node(pos.get_hash(), pos.get_offset());
+	node.value_count--;
+	if (!node.value_count) {
+	  if (node.keyval) {
+#ifdef DEBUG
+	    std::cerr << "erase failed\n";
+#endif
+	    abort();
+	  }
+	  node.prefix_key.~key_type();
+	  num_entries_--;
+	}
+	pos.down();
+      }
+      
+      return next_pos;
     }
 
     iterator erase(iterator first, iterator last) {
       while ( 1 ) {
 	bool is_last = first == last;
 	first = erase(first);
+	if (first == end()) {
+#ifdef DEBUG
+	  std::cerr << "last not found\n";
+#endif
+	  abort();
+	}
 	if (is_last) return first;
       }
     }
@@ -692,14 +714,10 @@ namespace radix_cpp {
 
       void clear() noexcept {
 	for (size_t i = 0; i < pages_.size(); i++) {
-	  size_t n = i + 1 == pages_.size() ? n_ : page_size;
-	  auto data = pages_[i];
-	  for (size_t j = 0; j < n; j++) {
-	    data[j].~value_type();
-	  }
-	  std::free(data);
+	  std::free(pages_[i]);
 	}
-	pages_.clear();
+	n_ = 0;
+	pages_.clear();	
       }
       
     private:
@@ -731,12 +749,12 @@ namespace radix_cpp {
 	
 	while ( 1 ) {
 	  auto & node = read_node(h, offset);
-	  if (!node.flags) {
+	  if (!node.value_count) {
 	    new (static_cast<void*>(&(node.prefix_key))) key_type(prefix_key);
-	    node.flags = flag_is_assigned;
 	    node.depth = static_cast<uint32_t>(depth);
 	    node.ordinal = static_cast<uint8_t>(ordinal);
 	    node.value_count = 1;
+	    node.keyval = nullptr;
 	    num_entries_++;
 	  } else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix_key) {
 	    // collision
@@ -744,7 +762,6 @@ namespace radix_cpp {
 	    num_insert_collisions_++;
 	    continue;
 	  } else {
-	    if (!node.value_count) num_entries_++;
 	    node.value_count++;
 	  }
 	  if (is_final) {
@@ -793,10 +810,7 @@ namespace radix_cpp {
     static Node * alloc_nodes(size_t s) {
       auto nodes = reinterpret_cast<Node*>(std::malloc(s * sizeof(Node)));
       for (size_t i = 0; i < s; i++) {
-	auto & node = nodes[i];
-	node.flags = 0;
-	node.keyval = nullptr;
-	node.value_count = 0;
+	nodes[i].value_count = 0;
       }
       return nodes;
     }
@@ -811,7 +825,7 @@ namespace radix_cpp {
 	  size_t offset = 0;
 	  while ( 1 ) {
 	    auto & output_node = new_nodes[(h + offset) & (new_size - 1)];
-	    if (output_node.flags) {
+	    if (output_node.value_count) {
 	      offset++;
 	      num_insert_collisions_++;
 	    } else {
