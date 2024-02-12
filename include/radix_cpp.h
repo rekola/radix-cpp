@@ -222,6 +222,7 @@ namespace radix_cpp {
     template <bool IsConst>
     struct Iterator
     {
+      using TablePtr	      = typename std::conditional<IsConst, Table<key_type, mapped_type> const*, Table<key_type, mapped_type>*>::type;
       using iterator_category = std::forward_iterator_tag;
       using difference_type   = std::ptrdiff_t;
       using value_type        = typename Self::value_type;
@@ -229,7 +230,7 @@ namespace radix_cpp {
       using pointer           = typename std::conditional<IsConst, value_type const*, value_type*>::type;
 
       // end iterator
-      Iterator(Self * table) noexcept
+      Iterator(TablePtr table) noexcept
 	: table_(table),
 	  ptr_(nullptr),
 	  ordinal_(0),
@@ -238,7 +239,7 @@ namespace radix_cpp {
 	  prefix_key_(),
 	  depth_(0) { }
       
-      Iterator(Self * table, value_type * ptr, uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset, size_t hash) noexcept
+      Iterator(TablePtr table, value_type * ptr, uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset, size_t hash) noexcept
 	: table_(table),
 	  ptr_(ptr),
 	  ordinal_(ordinal),
@@ -449,7 +450,7 @@ namespace radix_cpp {
 	}
       }
       
-      Self * table_;
+      TablePtr table_;
       value_type * ptr_;
 
       // * cached values
@@ -506,7 +507,7 @@ namespace radix_cpp {
       nodes_ = nullptr;
       arena_.clear();
     }
-
+    
     iterator find(const key_type & key) noexcept {
       if (!table_size_) return end();
       auto depth = static_cast<uint32_t>(keysize(key));
@@ -527,6 +528,32 @@ namespace radix_cpp {
 	}
       }
       return end();
+    }
+
+    const_iterator find(const key_type & key) const noexcept {
+      if (!table_size_) return cend();
+      auto depth = static_cast<uint32_t>(keysize(key));
+      auto [ ordinal, prefix_key ] = deconstruct(key);
+      size_t offset = 0, h = calc_hash(depth, prefix_key, ordinal);
+
+      while ( 1 ) {
+	auto & node = read_node(h, offset);
+	if (!node.value_count) {
+	  break; // not found
+	} else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix_key) {
+	  // collision
+	  offset++;
+	} else if (node.keyval) {
+	  return const_iterator(this, node.keyval, depth, prefix_key, ordinal, offset, h);
+	} else {
+	  break; // not final / wrong key
+	}
+      }
+      return cend();
+    }
+
+    size_t count(const key_type & key) const noexcept {
+      return find(key) == cend() ? 0 : 1;
     }
     
     template <typename Q = mapped_type>
@@ -674,6 +701,20 @@ namespace radix_cpp {
     iterator end() noexcept {
       // iterator is by default and end iterator (the depth is zero)
       return iterator(this);
+    }
+
+    const_iterator cbegin() noexcept {
+      if (size()) {
+	const_iterator it(this);
+	it.fast_forward();
+	return it;
+      } else {
+	return end();
+      }
+    }
+    const_iterator cend() const noexcept {
+      // iterator is by default and end iterator (the depth is zero)
+      return const_iterator(this);
     }
 
     bool empty() const noexcept { return num_final_entries_ == 0; }
@@ -842,6 +883,10 @@ namespace radix_cpp {
     }
 
     Node & read_node(size_t h, size_t offset) noexcept {
+      return nodes_[(h + offset) & (table_size_ - 1)];
+    }
+    
+    const Node & read_node(size_t h, size_t offset) const noexcept {
       return nodes_[(h + offset) & (table_size_ - 1)];
     }
 

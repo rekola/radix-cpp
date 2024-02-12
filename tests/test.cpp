@@ -375,6 +375,13 @@ TEST_CASE( "erase by value", "[erase_by_value]") {
   REQUIRE(S.empty());
 }
 
+TEST_CASE( "count", "[set_count]") {
+  radix_cpp::set<uint32_t> S;
+  REQUIRE(S.count(1) == 0);
+  S.insert(1);
+  REQUIRE(S.count(1) == 1);
+}
+
 #if 0
 TEST_CASE( "erase by range", "[erase_by_range]") {
   radix_cpp::set<uint32_t> S;
