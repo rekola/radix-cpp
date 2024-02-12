@@ -14,7 +14,6 @@
 
 namespace radix_cpp {
   inline constexpr uint32_t flag_is_assigned = 1;
-  inline constexpr uint32_t flag_is_deleted = 2;
    
   inline uint8_t append(uint8_t key, size_t digit) noexcept {
     return static_cast<uint8_t>(digit);
@@ -304,7 +303,7 @@ namespace radix_cpp {
 	    } else if (node.depth != depth_ || node.ordinal != ordinal_ || node.prefix_key != prefix_key_) {
 	      // collision
 	      offset_++;
-	    } else if (node.keyval && !(node.flags & flag_is_deleted)) {
+	    } else if (node.keyval) {
 	      // a final Node was found
 	      set_ptr(node.keyval);
 	      return *this;
@@ -350,19 +349,19 @@ namespace radix_cpp {
 
 	while (1) {
 	  auto & node = table_->read_node(hash_, offset_);
-	  if (!node.flags) break;
-	  else if (node.depth == 0) {
-	    if (node.flags & flag_is_deleted) {
-	      break;
-	    } else {
+	  if (node.flags) {
+	    if (node.depth != 0) {
+	      // collision
+	      offset_++;
+	      continue;
+	    } else if (node.keyval) {
 	      set_ptr(node.keyval);
 	      return;
 	    }
-	  } else {
-	    offset_++;
 	  }
+	  break;
 	}
-
+	
 	depth_ = 1;
 	offset_ = 0;
  	hash_ = calc_hash(depth_, prefix_key_, ordinal_);
@@ -382,7 +381,7 @@ namespace radix_cpp {
 	    } else if (depth_ != node.depth || ordinal_ != node.ordinal || prefix_key_ != node.prefix_key) {
 	      // collision
 	      offset_++;
-	    } else if (node.keyval && !(node.flags & flag_is_deleted)) {
+	    } else if (node.keyval) {
 	      set_ptr(node.keyval);
 	      return;
 	    } else if (node.value_count) {
@@ -522,7 +521,7 @@ namespace radix_cpp {
 	} else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix_key) {
 	  // collision
 	  offset++;
-	} else if (node.keyval && !(node.flags & flag_is_deleted)) {
+	} else if (node.keyval) {
 	  return iterator(this, node.keyval, depth, prefix_key, ordinal, offset, h);
 	} else {
 	  break; // not final / wrong key
@@ -543,12 +542,7 @@ namespace radix_cpp {
 	num_final_entries_++;
       } else {
 	*(node.keyval) = value_type(k, std::move(obj));
-	if (node.flags & flag_is_deleted) {
-	  node.flags ^= flag_is_deleted;
-	  num_final_entries_++;
-	} else {
-	  is_new = false;
-	}
+	is_new = false;
       }
       return std::make_pair(it, is_new);
     }
@@ -563,10 +557,6 @@ namespace radix_cpp {
 	node.keyval = arena_.alloc();
 	it.set_ptr(node.keyval);
 	new (static_cast<void*>(node.keyval)) value_type(std::move(vt));
-	num_final_entries_++;
-      } else if (node.flags & flag_is_deleted) {
-	*(node.keyval) = vt;
-	node.flags ^= flag_is_deleted;
 	num_final_entries_++;
       } else {
 	is_new = false;
@@ -610,10 +600,10 @@ namespace radix_cpp {
 
     iterator erase(iterator pos) {
       auto & node = read_node(pos.get_hash(), pos.get_offset());
-      if (node.keyval && !(node.flags & flag_is_deleted)) {
+      if (node.keyval) {
 	auto next_pos = ++pos;
-	
-	node.flags |= flag_is_deleted;
+
+	node.keyval = nullptr;
 	node.value_count--;
 	if (!node.value_count) num_entries_--;
 	num_final_entries_--;
