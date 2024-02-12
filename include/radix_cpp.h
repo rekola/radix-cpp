@@ -661,6 +661,10 @@ namespace radix_cpp {
 	}
 	pos.down();
       }
+
+      if (table_size_ > bucket_count && get_load_factor() < min_load_factor100) { // Check the load factor
+	resize(table_size_ >> 1);
+      }
       
       return next_pos;
     }
