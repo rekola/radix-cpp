@@ -210,11 +210,45 @@ namespace radix_cpp {
 
   private:
     struct Node {
-      value_type * keyval;
-      size_t value_count;
-      key_type prefix_key;
-      uint32_t depth;
-      uint8_t ordinal;
+      void set_payload(value_type * payload) { payload_ = payload; }
+      value_type * get_payload() { return payload_; }
+      const value_type * get_payload() const { return payload_; }
+      bool is_assigned() const { return combined_ != 0; }
+      uint32_t get_depth() const { return depth_; }
+      const key_type & get_prefix_key() const { return prefix_key_; }
+      size_t get_ordinal() const { return combined_ & 0xff; }
+      size_t get_value_count() const { return combined_ >> 8; }
+
+      void reset() {
+	combined_ = 0;
+      }
+
+      void assign(size_t depth, key_type prefix_key, size_t ordinal) {
+	depth_ = static_cast<uint32_t>(depth);
+	new (static_cast<void*>(&(prefix_key_))) key_type(std::move(prefix_key));
+	combined_ = (1 << 8) | ordinal;
+	payload_ = nullptr;
+      }
+      
+      void inc_value_count() {
+	combined_ += 256;
+      }
+
+      bool dec_value_count() {
+	combined_ -= 256;
+	if (combined_ < 256) {
+	  combined_ = 0;
+	  return true;
+	} else {
+	  return false;
+	}
+      }
+
+    private:
+      value_type * payload_;
+      size_t combined_; // low 8 bits = ordinal, the rest value count
+      key_type prefix_key_;
+      uint32_t depth_;
     };
 
   public:
@@ -222,10 +256,11 @@ namespace radix_cpp {
     template <bool IsConst>
     struct Iterator
     {
+      using value_type        = typename Self::value_type;
       using TablePtr	      = typename std::conditional<IsConst, Table<key_type, mapped_type> const*, Table<key_type, mapped_type>*>::type;
+      using PayloadPtr        = typename std::conditional<IsConst, value_type const*, value_type *>::type;
       using iterator_category = std::forward_iterator_tag;
       using difference_type   = std::ptrdiff_t;
-      using value_type        = typename Self::value_type;
       using reference         = typename std::conditional<IsConst, value_type const&, value_type&>::type;
       using pointer           = typename std::conditional<IsConst, value_type const*, value_type*>::type;
 
@@ -239,7 +274,7 @@ namespace radix_cpp {
 	  prefix_key_(),
 	  depth_(0) { }
       
-      Iterator(TablePtr table, value_type * ptr, uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset, size_t hash) noexcept
+      Iterator(TablePtr table, PayloadPtr ptr, uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset, size_t hash) noexcept
 	: table_(table),
 	  ptr_(ptr),
 	  ordinal_(ordinal),
@@ -268,7 +303,7 @@ namespace radix_cpp {
 	  ordinal_ = offset_ = 0;
 	} else {
 	  auto & node = repair_and_get_node();
-	  if (node.value_count > 1) {
+	  if (node.get_value_count() > 1) {
 	    depth_++;
 	    prefix_key_ = append(prefix_key_, ordinal_);
 	    ordinal_ = 0;
@@ -296,17 +331,17 @@ namespace radix_cpp {
 	    }
 	  } else {
 	    auto & node = table_->read_node(hash_, offset_);
-	    if (!node.value_count) {
+	    if (!node.is_assigned()) {
 	      // Node is not assigned
 	      ordinal_++;
 	      offset_ = 0;
 	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
-	    } else if (node.depth != depth_ || node.ordinal != ordinal_ || node.prefix_key != prefix_key_) {
+	    } else if (node.get_depth() != depth_ || node.get_ordinal() != ordinal_ || node.get_prefix_key() != prefix_key_) {
 	      // collision
 	      offset_++;
-	    } else if (node.keyval) {
+	    } else if (node.get_payload()) {
 	      // a final Node was found
-	      set_ptr(node.keyval);
+	      set_ptr(node.get_payload());
 	      return *this;
 	    } else {
 	      // non-final node => go up the tree
@@ -345,13 +380,13 @@ namespace radix_cpp {
 
 	while (1) {
 	  auto & node = table_->read_node(hash_, offset_);
-	  if (node.value_count) {
-	    if (node.depth != 0) {
+	  if (node.is_assigned()) {
+	    if (node.get_depth() != 0) {
 	      // collision
 	      offset_++;
 	      continue;
-	    } else if (node.keyval) {
-	      set_ptr(node.keyval);
+	    } else if (node.get_payload()) {
+	      set_ptr(node.get_payload());
 	      return;
 	    }
 	  }
@@ -370,16 +405,16 @@ namespace radix_cpp {
 #endif
 	  } else {
 	    auto & node = table_->read_node(hash_, offset_);
-	    if (!node.value_count) {
+	    if (!node.is_assigned()) {
 	      // unassigned
 	      ordinal_++;
 	      offset_ = 0;
 	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
-	    } else if (depth_ != node.depth || ordinal_ != node.ordinal || prefix_key_ != node.prefix_key) {
+	    } else if (depth_ != node.get_depth() || ordinal_ != node.get_ordinal() || prefix_key_ != node.get_prefix_key()) {
 	      // collision
 	      offset_++;
-	    } else if (node.keyval) {
-	      set_ptr(node.keyval);
+	    } else if (node.get_payload()) {
+	      set_ptr(node.get_payload());
 	      return;
 	    } else {
 	      depth_++;
@@ -404,12 +439,12 @@ namespace radix_cpp {
 	  hash_ = calc_hash(depth_, prefix_key_, ordinal_);
 	  while ( 1 ) {
 	    auto & node = table_->read_node(hash_, offset_);
-	    if (!node.value_count) {
+	    if (!node.is_assigned()) {
 #ifdef DEBUG
 	      std::cerr << "down() failed\n";
 #endif
 	      abort();
-	    } else if (depth_ == node.depth && ordinal_ == node.ordinal && prefix_key_ == node.prefix_key) {
+	    } else if (depth_ == node.get_depth() && ordinal_ == node.get_ordinal() && prefix_key_ == node.get_prefix_key()) {
 	      break;
 	    } else {
 	      offset_++;
@@ -420,7 +455,7 @@ namespace radix_cpp {
       size_t get_offset() const noexcept { return offset_; }
       size_t get_hash() const noexcept { return hash_; }
       
-      void set_ptr(value_type * ptr) { ptr_ = ptr; }
+      void set_ptr(PayloadPtr ptr) { ptr_ = ptr; }
       
     private:
       void clear() {
@@ -434,16 +469,16 @@ namespace radix_cpp {
 
       Node & repair_and_get_node() {
 	auto & node0 = table_->read_node(hash_, offset_);
-	if (ptr_ == node0.keyval) return node0;
+	if (ptr_ == node0.get_payload()) return node0;
 	offset_ = 0;
 	while ( 1 ) {
 	  auto & node = table_->read_node(hash_, offset_);
-	  if (!node.value_count) {
+	  if (!node.is_assigned()) {
 #ifdef DEBUG
 	    std::cerr << "repair failed\n";
 #endif
 	    abort();
-	  } else if (ptr_ == node.keyval) {
+	  } else if (ptr_ == node.get_payload()) {
 	    return node;
 	  }
 	  offset_++;
@@ -451,7 +486,7 @@ namespace radix_cpp {
       }
       
       TablePtr table_;
-      value_type * ptr_;
+      PayloadPtr ptr_;
 
       // * cached values
       // they are all obtainable from ptr_, but it's faster to cache them
@@ -495,10 +530,10 @@ namespace radix_cpp {
     void clear() noexcept {
       for (size_t i = 0; i < table_size_; i++) {
 	auto & node = nodes_[i];
-	if (node.value_count) {
-	  node.prefix_key.~key_type();
-	  if (node.keyval) {
-	    node.keyval->~value_type();
+	if (node.is_assigned()) {
+	  node.get_prefix_key().~key_type();
+	  if (node.get_payload()) {
+	    node.get_payload()->~value_type();
 	  }
 	}
       }
@@ -516,13 +551,13 @@ namespace radix_cpp {
 
       while ( 1 ) {
 	auto & node = read_node(h, offset);
-	if (!node.value_count) {
+	if (!node.is_assigned()) {
 	  break; // not found
-	} else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix_key) {
+	} else if (node.get_depth() != depth || node.get_ordinal() != ordinal || node.get_prefix_key() != prefix_key) {
 	  // collision
 	  offset++;
-	} else if (node.keyval) {
-	  return iterator(this, node.keyval, depth, prefix_key, ordinal, offset, h);
+	} else if (node.get_payload()) {
+	  return iterator(this, node.get_payload(), depth, prefix_key, ordinal, offset, h);
 	} else {
 	  break; // not final / wrong key
 	}
@@ -538,13 +573,13 @@ namespace radix_cpp {
 
       while ( 1 ) {
 	auto & node = read_node(h, offset);
-	if (!node.value_count) {
+	if (!node.is_assigned()) {
 	  break; // not found
-	} else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix_key) {
+	} else if (node.get_depth() != depth || node.get_ordinal() != ordinal || node.get_prefix_key() != prefix_key) {
 	  // collision
 	  offset++;
-	} else if (node.keyval) {
-	  return const_iterator(this, node.keyval, depth, prefix_key, ordinal, offset, h);
+	} else if (node.get_payload()) {
+	  return const_iterator(this, node.get_payload(), depth, prefix_key, ordinal, offset, h);
 	} else {
 	  break; // not final / wrong key
 	}
@@ -561,13 +596,13 @@ namespace radix_cpp {
       auto it = create_nodes_for_key(k);
       auto & node = read_node(it.get_hash(), it.get_offset());
       bool is_new = true;	
-      if (!node.keyval) {
-	node.keyval = arena_.alloc();
-	it.set_ptr(node.keyval);
-	new (static_cast<void*>(node.keyval)) value_type(k, std::move(obj));
+      if (!node.get_payload()) {
+	node.set_payload(arena_.alloc());
+	it.set_ptr(node.get_payload());
+	new (static_cast<void*>(node.get_payload())) value_type(k, std::move(obj));
 	num_final_entries_++;
       } else {
-	*(node.keyval) = value_type(k, std::move(obj));
+	*(node.get_payload()) = value_type(k, std::move(obj));
 	is_new = false;
       }
       return std::make_pair(it, is_new);
@@ -579,10 +614,10 @@ namespace radix_cpp {
       auto it = create_nodes_for_key(getFirstConst(vt));
       auto & node = read_node(it.get_hash(), it.get_offset());
       bool is_new = true;
-      if (!node.keyval) {
-	node.keyval = arena_.alloc();
-	it.set_ptr(node.keyval);
-	new (static_cast<void*>(node.keyval)) value_type(std::move(vt));
+      if (!node.get_payload()) {
+	node.set_payload(arena_.alloc());
+	it.set_ptr(node.get_payload());
+	new (static_cast<void*>(node.get_payload())) value_type(std::move(vt));
 	num_final_entries_++;
       } else {
 	is_new = false;
@@ -626,7 +661,7 @@ namespace radix_cpp {
 
     iterator erase(iterator pos) {
       auto & node = read_node(pos.get_hash(), pos.get_offset());
-      if (!node.value_count || !node.keyval) {
+      if (!node.is_assigned() || !node.get_payload()) {
 #ifdef DEBUG
 	std::cerr << "invalid parameter to erase()\n";
 #endif
@@ -635,12 +670,11 @@ namespace radix_cpp {
       auto next_pos = pos;
       ++next_pos;
 
-      node.keyval->~value_type();
-      node.keyval = nullptr;
-      
-      node.value_count--;
-      if (!node.value_count) {
-	node.prefix_key.~key_type();
+      node.get_payload()->~value_type();
+      node.set_payload(nullptr);
+
+      if (node.dec_value_count()) {
+	node.get_prefix_key().~key_type();
 	num_entries_--;
       }
       num_final_entries_--;
@@ -648,15 +682,8 @@ namespace radix_cpp {
       pos.down();
       while ( pos != end() ) {
 	auto & node = read_node(pos.get_hash(), pos.get_offset());
-	node.value_count--;
-	if (!node.value_count) {
-	  if (node.keyval) {
-#ifdef DEBUG
-	    std::cerr << "erase failed\n";
-#endif
-	    abort();
-	  }
-	  node.prefix_key.~key_type();
+	if (node.dec_value_count()) {
+	  node.get_prefix_key().~key_type();
 	  num_entries_--;
 	}
 	pos.down();
@@ -794,23 +821,19 @@ namespace radix_cpp {
 	
 	while ( 1 ) {
 	  auto & node = read_node(h, offset);
-	  if (!node.value_count) {
-	    new (static_cast<void*>(&(node.prefix_key))) key_type(prefix_key);
-	    node.depth = static_cast<uint32_t>(depth);
-	    node.ordinal = static_cast<uint8_t>(ordinal);
-	    node.value_count = 1;
-	    node.keyval = nullptr;
+	  if (!node.is_assigned()) {
+	    node.assign(depth, prefix_key, ordinal);
 	    num_entries_++;
-	  } else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix_key) {
+	  } else if (node.get_depth() != depth || node.get_ordinal() != ordinal || node.get_prefix_key() != prefix_key) {
 	    // collision
 	    offset++;
 	    num_insert_collisions_++;
 	    continue;
 	  } else {
-	    node.value_count++;
+	    node.inc_value_count();
 	  }
 	  if (is_final) {
-	    it = iterator(this, node.keyval, depth, prefix_key, ordinal, offset, h);
+	    it = iterator(this, node.get_payload(), depth, prefix_key, ordinal, offset, h);
 	    is_final = false;
 	  }
 	  break;
@@ -855,7 +878,7 @@ namespace radix_cpp {
     static Node * alloc_nodes(size_t s) {
       auto nodes = reinterpret_cast<Node*>(std::malloc(s * sizeof(Node)));
       for (size_t i = 0; i < s; i++) {
-	nodes[i].value_count = 0;
+	nodes[i].reset();
       }
       return nodes;
     }
@@ -865,12 +888,12 @@ namespace radix_cpp {
       
       for (size_t i = 0; i < table_size_; i++) {
 	Node & node = nodes_[i];
-	if (node.value_count) {
-	  size_t h = calc_hash(node.depth, node.prefix_key, node.ordinal);
+	if (node.is_assigned()) {
+	  size_t h = calc_hash(node.get_depth(), node.get_prefix_key(), node.get_ordinal());
 	  size_t offset = 0;
 	  while ( 1 ) {
 	    auto & output_node = new_nodes[(h + offset) & (new_size - 1)];
-	    if (output_node.value_count) {
+	    if (output_node.is_assigned()) {
 	      offset++;
 	      num_insert_collisions_++;
 	    } else {
