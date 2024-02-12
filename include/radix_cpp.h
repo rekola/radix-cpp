@@ -671,6 +671,7 @@ namespace radix_cpp {
       ++next_pos;
 
       node.get_payload()->~value_type();
+      arena_.dealloc(node.get_payload());
       node.set_payload(nullptr);
 
       if (node.dec_value_count()) {
@@ -777,11 +778,21 @@ namespace radix_cpp {
       Arena& operator=(const Arena & other) = delete;
 
       value_type * alloc() {
-	if (pages_.empty() || n_ == page_size) {
-	  pages_.push_back(reinterpret_cast<value_type*>(std::malloc(page_size * sizeof(value_type))));
-	  n_ = 0;
+	if (!free_list_.empty()) {
+	  value_type * ptr = free_list_.back();
+	  free_list_.pop_back();
+	  return ptr;
+	} else {
+	  if (pages_.empty() || n_ == page_size) {
+	    pages_.push_back(reinterpret_cast<value_type*>(std::malloc(page_size * sizeof(value_type))));
+	    n_ = 0;
+	  }
+	  return pages_.back() + n_++;
 	}
-	return pages_.back() + n_++;
+      }
+
+      void dealloc(value_type * ptr) {
+	free_list_.push_back(ptr);
       }
 
       void clear() noexcept {
@@ -795,6 +806,7 @@ namespace radix_cpp {
     private:
       size_t n_ = 0;
       std::vector<value_type*> pages_;
+      std::vector<value_type*> free_list_;
     };
 
     size_t get_load_factor() const noexcept { return 100 * num_entries_ / table_size_; }
