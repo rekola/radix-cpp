@@ -807,7 +807,7 @@ namespace radix_cpp {
       
       for (size_t i = 0; i < table_size_; i++) {
 	Node & node = nodes_[i];
-	if (node.flags) {
+	if (node.value_count) {
 	  size_t h = calc_hash(node.depth, node.prefix_key, node.ordinal);
 	  size_t offset = 0;
 	  while ( 1 ) {
