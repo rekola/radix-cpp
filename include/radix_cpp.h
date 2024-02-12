@@ -200,6 +200,7 @@ namespace radix_cpp {
     static constexpr bool is_map = !std::is_void<T>::value;
     static constexpr bool is_set = !is_map;
     static constexpr size_t bucket_count = 256; // bucket count for the ordered portion of the key
+    static constexpr size_t min_load_factor100 = 15;
     static constexpr size_t max_load_factor100 = 60;
     
     using key_type = Key;
@@ -614,14 +615,17 @@ namespace radix_cpp {
 	
 	node.flags |= flag_is_deleted;
 	node.value_count--;
+	if (!node.value_count) num_entries_--;
 	num_final_entries_--;
 
 	pos.down();
 	while ( pos != end() ) {
 	  auto & node = read_node(pos.get_hash(), pos.get_offset());
 	  node.value_count--;
+	  if (!node.value_count) num_entries_--;
 	  pos.down();
 	}
+	
 	return next_pos;
       } else {
 	return pos;
@@ -712,11 +716,13 @@ namespace radix_cpp {
       size_t n_ = 0;
       std::vector<value_type*> pages_;
     };
+
+    size_t get_load_factor() const noexcept { return 100 * num_entries_ / table_size_; }
     
     iterator create_nodes_for_key(key_type key) {
       if (!nodes_) {
 	init(bucket_count);
-      } else if (100 * num_entries_ / table_size_ >= max_load_factor100) { // Check the load factor
+      } else if (get_load_factor() >= max_load_factor100) { // Check the load factor
 	resize(table_size_ * 2);
       }
 
@@ -740,14 +746,17 @@ namespace radix_cpp {
 	    node.flags = flag_is_assigned;
 	    node.depth = static_cast<uint32_t>(depth);
 	    node.ordinal = static_cast<uint8_t>(ordinal);
+	    node.value_count = 1;
 	    num_entries_++;
 	  } else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix_key) {
 	    // collision
 	    offset++;
 	    num_insert_collisions_++;
 	    continue;
+	  } else {
+	    if (!node.value_count) num_entries_++;
+	    node.value_count++;
 	  }
-	  node.value_count++;
 	  if (is_final) {
 	    it = iterator(this, node.keyval, depth, prefix_key, ordinal, offset, h);
 	    is_final = false;
