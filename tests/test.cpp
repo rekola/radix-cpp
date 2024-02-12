@@ -374,3 +374,13 @@ TEST_CASE( "erase by value", "[erase_by_value]") {
   REQUIRE(S.erase("abba") == 1);
   REQUIRE(S.empty());
 }
+
+TEST_CASE( "erase by range", "[erase_by_range]") {
+  radix_cpp::set<uint32_t> S;
+  for (uint32_t i = 0; i < 100000; i++) {
+    S.insert(i);
+  }
+  S.erase(S.begin(), S.find(99999));
+  REQUIRE(S.empty());
+  REQUIRE(S.begin() == S.end());
+}

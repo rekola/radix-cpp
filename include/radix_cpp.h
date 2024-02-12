@@ -378,23 +378,22 @@ namespace radix_cpp {
 	      ordinal_++;
 	      offset_ = 0;
 	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
-	    } else if (depth_ == node.depth && ordinal_ == node.ordinal && prefix_key_ == node.prefix_key) {
-	      if (node.keyval && !(node.flags & flag_is_deleted)) {
-		set_ptr(node.keyval);
-		return;
-	      } else if (node.value_count) {
-		depth_++;
-		prefix_key_ = append(prefix_key_, ordinal_);
-		ordinal_ = 0;
-		hash_ = calc_hash(depth_, prefix_key_, ordinal_);
-	      } else {
-		// deleted
-		ordinal_++;
-		offset_ = 0;
-		hash_ = calc_hash(depth_, prefix_key_, ordinal_);
-	      }
-	    } else {
+	    } else if (depth_ != node.depth || ordinal_ != node.ordinal || prefix_key_ != node.prefix_key) {
+	      // collision
 	      offset_++;
+	    } else if (node.keyval && !(node.flags & flag_is_deleted)) {
+	      set_ptr(node.keyval);
+	      return;
+	    } else if (node.value_count) {
+	      depth_++;
+	      prefix_key_ = append(prefix_key_, ordinal_);
+	      ordinal_ = 0;
+	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
+	    } else {
+	      // deleted
+	      ordinal_++;
+	      offset_ = 0;
+	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
 	    }
 	  }
 	}
@@ -459,7 +458,7 @@ namespace radix_cpp {
       Self * table_;
       value_type * ptr_;
 
-      // cached values
+      // * cached values
       // they are all obtainable from ptr_, but it's faster to cache them
       // only temporarily can an iterator might point to a non-final Node (a node that has no ptr_)
       size_t ordinal_, offset_, hash_;
@@ -522,9 +521,7 @@ namespace radix_cpp {
 	} else if (node.depth != depth || node.ordinal != ordinal || node.prefix_key != prefix_key) {
 	  // collision
 	  offset++;
-	} else if (node.flags & flag_is_deleted) {
-	  return end();
-	} else if (node.keyval) {
+	} else if (node.keyval && !(node.flags & flag_is_deleted)) {
 	  return iterator(this, node.keyval, depth, prefix_key, ordinal, offset, h);
 	} else {
 	  break; // not final / wrong key
@@ -535,8 +532,8 @@ namespace radix_cpp {
     
     template <typename Q = mapped_type>
     typename std::enable_if<!std::is_void<Q>::value, std::pair<iterator,bool>>::type insert_or_assign(const Key& k, Q && obj) {
-      auto [ it, hash ] = create_nodes_for_key(k);
-      auto & node = read_node(hash, it.get_offset());
+      auto it = create_nodes_for_key(k);
+      auto & node = read_node(it.get_hash(), it.get_offset());
       bool is_new = true;	
       if (!node.keyval) {
 	node.keyval = arena_.alloc();
@@ -558,8 +555,8 @@ namespace radix_cpp {
     template <typename... Args>
     std::pair<iterator,bool> emplace(Args&&... args) {
       value_type vt{std::forward<Args>(args)...};
-      auto [ it, hash ] = create_nodes_for_key(getFirstConst(vt));
-      auto & node = read_node(hash, it.get_offset());
+      auto it = create_nodes_for_key(getFirstConst(vt));
+      auto & node = read_node(it.get_hash(), it.get_offset());
       bool is_new = true;
       if (!node.keyval) {
 	node.keyval = arena_.alloc();
@@ -628,6 +625,14 @@ namespace radix_cpp {
 	return next_pos;
       } else {
 	return pos;
+      }
+    }
+
+    iterator erase(iterator first, iterator last) {
+      while ( 1 ) {
+	bool is_last = first == last;
+	first = erase(first);
+	if (is_last) return first;
       }
     }
 
@@ -708,7 +713,7 @@ namespace radix_cpp {
       std::vector<value_type*> pages_;
     };
     
-    std::pair<iterator, size_t> create_nodes_for_key(key_type key) {
+    iterator create_nodes_for_key(key_type key) {
       if (!nodes_) {
 	init(bucket_count);
       } else if (100 * num_entries_ / table_size_ >= max_load_factor100) { // Check the load factor
@@ -720,7 +725,6 @@ namespace radix_cpp {
       auto n = keysize(key);
       auto depth = static_cast<uint32_t>(n);
       iterator it = end();
-      size_t first_hash = 0;
       bool is_final = true;
             
       // insert digits from least significant to most significant
@@ -746,7 +750,6 @@ namespace radix_cpp {
 	  node.value_count++;
 	  if (is_final) {
 	    it = iterator(this, node.keyval, depth, prefix_key, ordinal, offset, h);
-	    first_hash = h;
 	    is_final = false;
 	  }
 	  break;
@@ -755,7 +758,7 @@ namespace radix_cpp {
 	key = std::move(prefix_key);
       }
 
-      return std::pair(it, first_hash);
+      return it;
     }
     // getFirstConst returns the key from value_type for either set or map
     // This version is for sets, where value_type == key_type
