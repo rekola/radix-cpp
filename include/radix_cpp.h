@@ -214,29 +214,28 @@ namespace radix_cpp {
       value_type * get_payload() { return payload_; }
       const value_type * get_payload() const { return payload_; }
       bool is_assigned() const { return combined_ != 0; }
-      uint32_t get_depth() const { return depth_; }
+      uint32_t get_depth_lsb() const { return (combined_ >> 8) & 0xff; }
       const key_type & get_prefix_key() const { return prefix_key_; }
       size_t get_ordinal() const { return combined_ & 0xff; }
-      size_t get_value_count() const { return combined_ >> 8; }
+      size_t get_value_count() const { return combined_ >> 16; }
 
       void reset() {
 	combined_ = 0;
       }
 
       void assign(size_t depth, key_type prefix_key, size_t ordinal) {
-	depth_ = static_cast<uint32_t>(depth);
 	new (static_cast<void*>(&(prefix_key_))) key_type(std::move(prefix_key));
-	combined_ = (1 << 8) | ordinal;
+	combined_ = (1 << 16) | ((depth & 0xff) << 8) | ordinal;
 	payload_ = nullptr;
       }
       
       void inc_value_count() {
-	combined_ += 256;
+	combined_ += 65536;
       }
 
       bool dec_value_count() {
-	combined_ -= 256;
-	if (combined_ < 256) {
+	combined_ -= 65536;
+	if (combined_ < 65536) {
 	  combined_ = 0;
 	  return true;
 	} else {
@@ -244,11 +243,14 @@ namespace radix_cpp {
 	}
       }
 
+      bool equals(size_t depth, const key_type & prefix_key, size_t ordinal) const {
+	return (depth & 0xff) == get_depth_lsb() && ordinal == get_ordinal() && prefix_key == prefix_key_;
+      }
+
     private:
+      uint64_t combined_; // from low to high, bits 1-8 = ordinal, 9-16 = lsb of depth, the rest = value count
       value_type * payload_;
-      size_t combined_; // low 8 bits = ordinal, the rest value count
       key_type prefix_key_;
-      uint32_t depth_;
     };
 
   public:
@@ -344,7 +346,7 @@ namespace radix_cpp {
 	    offset_ = 0;
 	    hash_ = calc_final_hash(hash0_, ordinal_);
 	    node = table_->read_node(hash_);
-	  } else if (node->get_depth() != depth_ || node->get_ordinal() != ordinal_ || node->get_prefix_key() != prefix_key_) {
+	  } else if (!node->equals(depth_, prefix_key_, ordinal_)) {
 	    // collision
 	    if (++node == nodes_end) node = nodes_start;
 	    offset_++;
@@ -393,7 +395,7 @@ namespace radix_cpp {
 	while (1) {
 	  auto node = table_->read_node(hash_, offset_);
 	  if (node->is_assigned()) {
-	    if (node->get_depth() != 0) {
+	    if (!node->equals(depth_, prefix_key_, 0)) {
 	      // collision
 	      offset_++;
 	      continue;
@@ -423,7 +425,7 @@ namespace radix_cpp {
 	      ordinal_++;
 	      offset_ = 0;
 	      hash_ = calc_final_hash(hash0_, ordinal_);
-	    } else if (depth_ != node->get_depth() || ordinal_ != node->get_ordinal() || prefix_key_ != node->get_prefix_key()) {
+	    } else if (!node->equals(depth_, prefix_key_, ordinal_)) {
 	      // collision
 	      offset_++;
 	    } else if (node->get_payload()) {
@@ -459,7 +461,7 @@ namespace radix_cpp {
 	      std::cerr << "down() failed\n";
 #endif
 	      abort();
-	    } else if (depth_ == node->get_depth() && ordinal_ == node->get_ordinal() && prefix_key_ == node->get_prefix_key()) {
+	    } else if (node->equals(depth_, prefix_key_, ordinal_)) {
 	      break;
 	    } else {
 	      offset_++;
@@ -576,7 +578,7 @@ namespace radix_cpp {
       while ( 1 ) {
 	if (!node->is_assigned()) {
 	  break; // not found
-	} else if (node->get_depth() != depth || node->get_ordinal() != ordinal || node->get_prefix_key() != prefix_key) {
+	} else if (!node->equals(depth, prefix_key, ordinal)) {
 	  // collision
 	  if (++node == nodes_end) node = nodes_start;
 	} else if (node->get_payload()) {
@@ -601,7 +603,7 @@ namespace radix_cpp {
       while ( 1 ) {
 	if (!node->is_assigned()) {
 	  break; // not found
-	} else if (node->get_depth() != depth || node->get_ordinal() != ordinal || node->get_prefix_key() != prefix_key) {
+	} else if (!node->equals(depth, prefix_key, ordinal)) {
 	  // collision
 	  if (++node == nodes_end) node = nodes_start;
 	} else if (node->get_payload()) {
@@ -865,7 +867,7 @@ namespace radix_cpp {
 	  if (!node->is_assigned()) {
 	    node->assign(depth, prefix_key, ordinal);
 	    num_entries_++;
-	  } else if (node->get_depth() != depth || node->get_ordinal() != ordinal || node->get_prefix_key() != prefix_key) {
+	  } else if (!node->equals(depth, prefix_key, ordinal)) {
 	    // collision
 	    if (++node == nodes_end) node = nodes_start;
 	    num_insert_collisions_++;
@@ -935,7 +937,7 @@ namespace radix_cpp {
       auto end = nodes_ + table_size_;
       for (; node != end; node++) {
 	if (node->is_assigned()) {
-	  auto hash0 = calc_unordered_hash(node->get_depth(), node->get_prefix_key());
+	  auto hash0 = calc_unordered_hash(node->get_depth_lsb(), node->get_prefix_key());
 	  auto hash = calc_final_hash(hash0, node->get_ordinal());
 	  auto new_node = new_nodes + (hash & new_mask);
 	  
