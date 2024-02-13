@@ -801,7 +801,9 @@ namespace radix_cpp {
 	  return ptr;
 	} else {
 	  if (pages_.empty() || n_ == page_size) {
-	    pages_.push_back(reinterpret_cast<value_type*>(std::malloc(page_size * sizeof(value_type))));
+	    auto p = reinterpret_cast<value_type*>(std::malloc(page_size * sizeof(value_type)));
+	    if (!p) throw std::bad_alloc();
+	    pages_.push_back(p);
 	    n_ = 0;
 	  }
 	  return pages_.back() + n_++;
@@ -909,6 +911,7 @@ namespace radix_cpp {
 
     static Node * alloc_nodes(size_t s) {
       auto nodes = reinterpret_cast<Node*>(std::malloc(s * sizeof(Node)));
+      if (!nodes) throw std::bad_alloc();
       for (size_t i = 0; i < s; i++) {
 	nodes[i].reset();
       }
