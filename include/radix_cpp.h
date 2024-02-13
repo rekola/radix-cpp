@@ -270,15 +270,17 @@ namespace radix_cpp {
 	  ptr_(nullptr),
 	  ordinal_(0),
 	  offset_(0),
+	  hash0_(0),
 	  hash_(0),
 	  prefix_key_(),
 	  depth_(0) { }
       
-      Iterator(TablePtr table, PayloadPtr ptr, uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset, size_t hash) noexcept
+      Iterator(TablePtr table, PayloadPtr ptr, uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset, size_t hash0, size_t hash) noexcept
 	: table_(table),
 	  ptr_(ptr),
 	  ordinal_(ordinal),
 	  offset_(offset),
+	  hash0_(hash0),
 	  hash_(hash),
 	  prefix_key_(std::move(prefix_key)),
 	  depth_(depth) { }
@@ -301,12 +303,14 @@ namespace radix_cpp {
 	  // empty key
 	  depth_++;
 	  ordinal_ = offset_ = 0;
+	  hash0_ = calc_unordered_hash(depth_, prefix_key_);
 	} else {
 	  auto & node = repair_and_get_node();
 	  if (node.get_value_count() > 1) {
 	    depth_++;
 	    prefix_key_ = append(prefix_key_, ordinal_);
 	    ordinal_ = 0;
+	    hash0_ = calc_unordered_hash(depth_, prefix_key_);
 	  } else {
 	    ordinal_++;
 	  }
@@ -314,7 +318,7 @@ namespace radix_cpp {
 	}
 
 	// iterate until a final Node is found
-	hash_ = calc_hash(depth_, prefix_key_, ordinal_);
+	hash_ = calc_final_hash(hash0_, ordinal_);
 	while ( 1 ) {
 	  if (ordinal_ == bucket_count) {
 	    // we have run through the whole range => go down the tree
@@ -322,12 +326,13 @@ namespace radix_cpp {
 	      clear(); // become an end iterator
 	      return *this;
 	    } else {
-	      depth_--;
 	      auto [ parent_ordinal, parent_prefix_key ] = deconstruct(prefix_key_);
+	      depth_--;
 	      prefix_key_ = parent_prefix_key;
 	      ordinal_ = parent_ordinal + 1;
 	      offset_ = 0;
-	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
+	      hash0_ = calc_unordered_hash(depth_, prefix_key_);
+	      hash_ = calc_final_hash(hash0_, ordinal_);
 	    }
 	  } else {
 	    auto & node = table_->read_node(hash_, offset_);
@@ -335,7 +340,7 @@ namespace radix_cpp {
 	      // Node is not assigned
 	      ordinal_++;
 	      offset_ = 0;
-	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
+	      hash_ = calc_final_hash(hash0_, ordinal_);
 	    } else if (node.get_depth() != depth_ || node.get_ordinal() != ordinal_ || node.get_prefix_key() != prefix_key_) {
 	      // collision
 	      offset_++;
@@ -348,7 +353,8 @@ namespace radix_cpp {
 	      depth_++;
 	      prefix_key_ = append(prefix_key_, ordinal_);
 	      ordinal_ = offset_ = 0;
-	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
+	      hash0_ = calc_unordered_hash(depth_, prefix_key_);
+	      hash_ = calc_final_hash(hash0_, ordinal_);
 	    }
 	  }
 	}
@@ -376,8 +382,9 @@ namespace radix_cpp {
 	offset_ = 0;
 	prefix_key_ = key_type();
 	ordinal_ = 0;
-	hash_ = calc_hash(depth_, prefix_key_, ordinal_);
-
+	hash0_ = calc_unordered_hash(depth_, prefix_key_);
+	hash_ = calc_final_hash(hash0_, ordinal_);
+		      
 	while (1) {
 	  auto & node = table_->read_node(hash_, offset_);
 	  if (node.is_assigned()) {
@@ -395,7 +402,8 @@ namespace radix_cpp {
 	
 	depth_ = 1;
 	offset_ = 0;
- 	hash_ = calc_hash(depth_, prefix_key_, ordinal_);
+ 	hash0_ = calc_unordered_hash(depth_, prefix_key_);
+ 	hash_ = calc_final_hash(hash0_, ordinal_);
        
 	while ( 1 ) {
 	  if (ordinal_ == bucket_count) {
@@ -409,7 +417,7 @@ namespace radix_cpp {
 	      // unassigned
 	      ordinal_++;
 	      offset_ = 0;
-	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
+	      hash_ = calc_final_hash(hash0_, ordinal_);
 	    } else if (depth_ != node.get_depth() || ordinal_ != node.get_ordinal() || prefix_key_ != node.get_prefix_key()) {
 	      // collision
 	      offset_++;
@@ -420,7 +428,8 @@ namespace radix_cpp {
 	      depth_++;
 	      prefix_key_ = append(prefix_key_, ordinal_);
 	      ordinal_ = 0;
-	      hash_ = calc_hash(depth_, prefix_key_, ordinal_);
+	      hash0_ = calc_unordered_hash(depth_, prefix_key_);
+	      hash_ = calc_final_hash(hash0_, ordinal_);
 	    }
 	  }
 	}
@@ -436,7 +445,8 @@ namespace radix_cpp {
 	  ordinal_ = parent_ordinal;
 	  offset_ = 0;
 	  ptr_ = nullptr;
-	  hash_ = calc_hash(depth_, prefix_key_, ordinal_);
+	  hash0_ = calc_unordered_hash(depth_, prefix_key_);
+	  hash_ = calc_final_hash(hash0_, ordinal_);
 	  while ( 1 ) {
 	    auto & node = table_->read_node(hash_, offset_);
 	    if (!node.is_assigned()) {
@@ -464,6 +474,7 @@ namespace radix_cpp {
 	prefix_key_ = key_type{};
 	ordinal_ = 0;
 	offset_ = 0;
+	hash0_ = 0;
 	hash_ = 0;
       }
 
@@ -491,7 +502,7 @@ namespace radix_cpp {
       // * cached values
       // they are all obtainable from ptr_, but it's faster to cache them
       // only temporarily can an iterator might point to a non-final Node (a node that has no ptr_)
-      size_t ordinal_, offset_, hash_;
+      size_t ordinal_, offset_, hash0_, hash_;
       key_type prefix_key_;
       uint32_t depth_;
     };
@@ -547,17 +558,19 @@ namespace radix_cpp {
       if (!table_size_) return end();
       auto depth = static_cast<uint32_t>(keysize(key));
       auto [ ordinal, prefix_key ] = deconstruct(key);
-      size_t offset = 0, h = calc_hash(depth, prefix_key, ordinal);
-
+      auto hash0 = calc_unordered_hash(depth, prefix_key);
+      auto hash = calc_final_hash(hash0, ordinal);  
+      size_t offset = 0;
+      
       while ( 1 ) {
-	auto & node = read_node(h, offset);
+	auto & node = read_node(hash, offset);
 	if (!node.is_assigned()) {
 	  break; // not found
 	} else if (node.get_depth() != depth || node.get_ordinal() != ordinal || node.get_prefix_key() != prefix_key) {
 	  // collision
 	  offset++;
 	} else if (node.get_payload()) {
-	  return iterator(this, node.get_payload(), depth, prefix_key, ordinal, offset, h);
+	  return iterator(this, node.get_payload(), depth, prefix_key, ordinal, offset, hash0, hash);
 	} else {
 	  break; // not final / wrong key
 	}
@@ -569,17 +582,19 @@ namespace radix_cpp {
       if (!table_size_) return cend();
       auto depth = static_cast<uint32_t>(keysize(key));
       auto [ ordinal, prefix_key ] = deconstruct(key);
-      size_t offset = 0, h = calc_hash(depth, prefix_key, ordinal);
-
+      auto hash0 = calc_unordered_hash(depth, prefix_key);
+      auto hash = calc_final_hash(hash0, ordinal);  
+      size_t offset = 0;
+      
       while ( 1 ) {
-	auto & node = read_node(h, offset);
+	auto & node = read_node(hash, offset);
 	if (!node.is_assigned()) {
 	  break; // not found
 	} else if (node.get_depth() != depth || node.get_ordinal() != ordinal || node.get_prefix_key() != prefix_key) {
 	  // collision
 	  offset++;
 	} else if (node.get_payload()) {
-	  return const_iterator(this, node.get_payload(), depth, prefix_key, ordinal, offset, h);
+	  return const_iterator(this, node.get_payload(), depth, prefix_key, ordinal, offset, hash0, hash);
 	} else {
 	  break; // not final / wrong key
 	}
@@ -829,10 +844,12 @@ namespace radix_cpp {
       // even if keysize is zero, add at least one digit (for empty strings)
       for ( size_t i = 0; i < (n == 0 ? 1 : n); i++, depth-- ) {
 	auto [ ordinal, prefix_key ] = deconstruct(key);
-	size_t offset = 0, h = calc_hash(depth, prefix_key, ordinal);
+	auto hash0 = calc_unordered_hash(depth, prefix_key);
+	auto hash = calc_final_hash(hash0, ordinal);
+	size_t offset = 0;
 	
 	while ( 1 ) {
-	  auto & node = read_node(h, offset);
+	  auto & node = read_node(hash, offset);
 	  if (!node.is_assigned()) {
 	    node.assign(depth, prefix_key, ordinal);
 	    num_entries_++;
@@ -845,7 +862,7 @@ namespace radix_cpp {
 	    node.inc_value_count();
 	  }
 	  if (is_final) {
-	    it = iterator(this, node.get_payload(), depth, prefix_key, ordinal, offset, h);
+	    it = iterator(this, node.get_payload(), depth, prefix_key, ordinal, offset, hash0, hash);
 	    is_final = false;
 	  }
 	  break;
@@ -901,10 +918,12 @@ namespace radix_cpp {
       for (size_t i = 0; i < table_size_; i++) {
 	Node & node = nodes_[i];
 	if (node.is_assigned()) {
-	  size_t h = calc_hash(node.get_depth(), node.get_prefix_key(), node.get_ordinal());
+	  auto hash0 = calc_unordered_hash(node.get_depth(), node.get_prefix_key());
+	  auto hash = calc_final_hash(hash0, node.get_ordinal());
 	  size_t offset = 0;
+	  
 	  while ( 1 ) {
-	    auto & output_node = new_nodes[(h + offset) & (new_size - 1)];
+	    auto & output_node = new_nodes[(hash + offset) & (new_size - 1)];
 	    if (output_node.is_assigned()) {
 	      offset++;
 	      num_insert_collisions_++;
@@ -929,15 +948,16 @@ namespace radix_cpp {
       return nodes_[(h + offset) & (table_size_ - 1)];
     }
 
-    // calc_hash() uses Murmur3 to calculate hash for a Node.
+    // hash calculation functions use Murmur3 to calculate hash for a Node.
     // Murmur3 operations are specialized for both 32 bit and 64 bit size_t
-    static inline size_t calc_hash(uint32_t depth, const key_type & prefix_key, size_t ordinal) noexcept {
+    static inline size_t calc_unordered_hash(size_t depth, const key_type & prefix_key) noexcept {
       auto k1 = murmur3_mix_k1(std::hash<key_type>{}(prefix_key));
-      auto h1 = murmur3_mix_h1(std::size_t{0}, k1);
+      return murmur3_mix_h1(depth, k1);
+    }
 
-      k1 = murmur3_mix_k1((static_cast<size_t>(depth) << 8) | ordinal);
+    static inline size_t calc_final_hash(size_t h1, size_t ordinal) noexcept {
+      auto k1 = murmur3_mix_k1(ordinal);
       h1 = murmur3_mix_h1(h1, k1);
-
       return murmur3_fmix(h1);
     }
 
