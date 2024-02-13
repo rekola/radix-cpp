@@ -517,6 +517,7 @@ namespace radix_cpp {
 	num_inserts_(std::exchange(other.num_inserts_, 0)),
 	num_insert_collisions_(std::exchange(other.num_insert_collisions_, 0)),
 	table_size_(std::exchange(other.table_size_, 0)),
+	table_mask_(std::exchange(other.table_mask_, 0)),
 	nodes_(std::exchange(other.nodes_, nullptr)),
     	arena_(std::move(other.arena_)) { }
 
@@ -526,6 +527,7 @@ namespace radix_cpp {
       std::swap(num_inserts_, other.num_inserts_);
       std::swap(num_insert_collisions_, other.num_insert_collisons_);
       std::swap(table_size_, other.table_size_);
+      std::swap(table_mask_, other.table_mask_);
       std::swap(nodes_, other.nodes_);
       std::swap(arena_, other.arena_);
       return *this;
@@ -549,7 +551,7 @@ namespace radix_cpp {
 	}
       }
       std::free(nodes_);
-      num_entries_ = num_final_entries_ = num_inserts_ = num_insert_collisions_ = table_size_ = 0;
+      num_entries_ = num_final_entries_ = num_inserts_ = num_insert_collisions_ = table_size_ = table_mask_ = 0;
       nodes_ = nullptr;
       arena_.clear();
     }
@@ -901,6 +903,7 @@ namespace radix_cpp {
     void init(size_t s) {
       if (nodes_) std::free(nodes_);
       table_size_ = s;
+      table_mask_ = s - 1;
       nodes_ = alloc_nodes(s);
     }
 
@@ -913,23 +916,25 @@ namespace radix_cpp {
     }
     
     void resize(size_t new_size) {
+      auto new_mask = new_size - 1;
       auto new_nodes = alloc_nodes(new_size);
-      
-      for (size_t i = 0; i < table_size_; i++) {
-	Node & node = nodes_[i];
-	if (node.is_assigned()) {
-	  auto hash0 = calc_unordered_hash(node.get_depth(), node.get_prefix_key());
-	  auto hash = calc_final_hash(hash0, node.get_ordinal());
+
+      auto node = nodes_;
+      auto end = nodes_ + table_size_;
+      for (; node != end; node++) {
+	if (node->is_assigned()) {
+	  auto hash0 = calc_unordered_hash(node->get_depth(), node->get_prefix_key());
+	  auto hash = calc_final_hash(hash0, node->get_ordinal());
 	  size_t offset = 0;
 	  
 	  while ( 1 ) {
-	    auto & output_node = new_nodes[(hash + offset) & (new_size - 1)];
+	    auto & output_node = new_nodes[(hash + offset) & new_mask];
 	    if (output_node.is_assigned()) {
 	      offset++;
 	      num_insert_collisions_++;
 	    } else {
-	      std::swap(node, output_node);
-	      node.~Node();
+	      std::swap(*node, output_node);
+	      node->~Node();
 	      break;
 	    }
 	  }
@@ -938,14 +943,15 @@ namespace radix_cpp {
       std::free(nodes_);
       nodes_ = new_nodes;
       table_size_ = new_size;
+      table_mask_ = new_mask;
     }
 
     Node & read_node(size_t h, size_t offset) noexcept {
-      return nodes_[(h + offset) & (table_size_ - 1)];
+      return nodes_[(h + offset) & table_mask_];
     }
     
     const Node & read_node(size_t h, size_t offset) const noexcept {
-      return nodes_[(h + offset) & (table_size_ - 1)];
+      return nodes_[(h + offset) & table_mask_];
     }
 
     // hash calculation functions use Murmur3 to calculate hash for a Node.
@@ -963,7 +969,7 @@ namespace radix_cpp {
 
     size_t num_entries_ = 0, num_final_entries_ = 0;
     size_t num_inserts_ = 0, num_insert_collisions_ = 0;
-    size_t table_size_ = 0;
+    size_t table_size_ = 0, table_mask_ = 0;
     Node* nodes_ = nullptr;
     Arena arena_;
   };
