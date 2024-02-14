@@ -467,6 +467,7 @@ namespace radix_cpp {
 	  }
 	}
       }
+      size_t get_depth() const noexcept { return depth_; }
       size_t get_offset() const noexcept { return offset_; }
       size_t get_hash() const noexcept { return hash_; }
       
@@ -697,15 +698,15 @@ namespace radix_cpp {
       node->get_payload()->~value_type();
       arena_.dealloc(node->get_payload());
       node->set_payload(nullptr);
-
+      num_final_entries_--;
+	
       if (node->dec_value_count()) {
 	node->get_prefix_key().~key_type();
 	num_entries_--;
       }
-      num_final_entries_--;
       
       pos.down();
-      while ( pos != end() ) {
+      while ( pos.get_depth() ) {
 	auto node = read_node(pos.get_hash(), pos.get_offset());
 	if (node->dec_value_count()) {
 	  node->get_prefix_key().~key_type();
@@ -717,7 +718,7 @@ namespace radix_cpp {
       if (table_size_ > bucket_count && get_load_factor() < min_load_factor100) { // Check the load factor
 	resize(table_size_ >> 1);
       }
-      
+
       return next_pos;
     }
 
