@@ -382,6 +382,35 @@ TEST_CASE( "count", "[set_count]") {
   REQUIRE(S.count(1) == 1);
 }
 
+TEST_CASE( "long keys", "[long_keys]") {
+  std::string k1, k2, k3;
+  for (size_t i = 0; i < 400; i++) k1 += 'a';
+  for (size_t i = 0; i < 800; i++) k2 += 'a';
+  for (size_t i = 0; i < 1000; i++) k3 += 'z';
+  radix_cpp::set<std::string> S;
+  S.insert(k2);
+  S.insert(k1);
+  S.insert("");
+  S.insert(k3);
+  S.insert("abc");
+  REQUIRE(S.size() == 5);
+  auto it = S.begin();
+  REQUIRE(*it++ == "");
+  REQUIRE(*it++ == k1);
+  REQUIRE(*it++ == k2);
+  REQUIRE(*it++ == "abc");
+  REQUIRE(*it++ == k3);
+  REQUIRE(it == S.end());
+  S.erase(k1);
+  S.erase(k2);
+  S.erase(k3);
+  REQUIRE(S.size() == 2);
+  it = S.begin();
+  REQUIRE(*it++ == "");
+  REQUIRE(*it++ == "abc");
+  REQUIRE(it == S.end());
+}
+
 #if 0
 TEST_CASE( "erase by range", "[erase_by_range]") {
   radix_cpp::set<uint32_t> S;
