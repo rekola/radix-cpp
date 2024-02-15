@@ -482,24 +482,6 @@ namespace radix_cpp {
 	  }
 	}
       }
-      size_t get_depth() const noexcept { return depth_; }
-      const key_type & get_prefix_key() const noexcept { return prefix_key_; }
-      size_t get_ordinal() const noexcept { return ordinal_; }
-      size_t get_offset() const noexcept { return offset_; }
-      size_t get_hash() const noexcept { return hash_; }
-      
-      void set_ptr(PayloadPtr ptr) { ptr_ = ptr; }
-      
-    private:
-      void clear() {
-	ptr_ = nullptr;
-	depth_ = 0;
-	prefix_key_ = key_type{};
-	ordinal_ = 0;
-	offset_ = 0;
-	hash0_ = 0;
-	hash_ = 0;
-      }
 
       Node * repair_and_get_node() {
 	auto node0 = table_->read_node(hash_, offset_);
@@ -521,6 +503,25 @@ namespace radix_cpp {
 	  offset_++;
 	}
 	return node;
+      }
+
+      size_t get_depth() const noexcept { return depth_; }
+      const key_type & get_prefix_key() const noexcept { return prefix_key_; }
+      size_t get_ordinal() const noexcept { return ordinal_; }
+      size_t get_offset() const noexcept { return offset_; }
+      size_t get_hash() const noexcept { return hash_; }
+      
+      void set_ptr(PayloadPtr ptr) { ptr_ = ptr; }
+      
+    private:
+      void clear() {
+	ptr_ = nullptr;
+	depth_ = 0;
+	prefix_key_ = key_type{};
+	ordinal_ = 0;
+	offset_ = 0;
+	hash0_ = 0;
+	hash_ = 0;
       }
       
       TablePtr table_;
@@ -710,7 +711,7 @@ namespace radix_cpp {
     }
 
     iterator erase(iterator pos) {
-      auto node = read_node(pos.get_hash(), pos.get_offset());
+      auto node = pos.repair_and_get_node();
       if (!node->is_assigned() || !node->get_payload()) {
 #ifdef DEBUG
 	std::cerr << "invalid parameter to erase()\n";
@@ -740,11 +741,9 @@ namespace radix_cpp {
 	pos.down();
       }
 
-#if 0
       if (table_size_ > bucket_count && get_load_factor() < min_load_factor100) { // Check the load factor
 	resize(table_size_ >> 1);
       }
-#endif
       
       return next_pos;
     }
