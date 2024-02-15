@@ -102,7 +102,7 @@ final node. The offset is used for probing in case of collisions.
 
 ### Limitations and Future Plans
 
-- Maximum key length is 2^32
+- Maximum number of elements on 64-bit system is is 2^56
 - No signed types (digits of two's complement numbers are not ordered correctly)
 - 32-bit support is untested
 - How to sort std::any?
