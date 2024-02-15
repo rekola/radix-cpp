@@ -6,7 +6,7 @@
 #include <string>
 #include <stdexcept>
 
-#define DEBUG
+// #define DEBUG
 
 #ifdef DEBUG
 #include <iostream>
@@ -212,6 +212,7 @@ namespace radix_cpp {
       value_type * get_payload() { return payload_; }
       const value_type * get_payload() const { return payload_; }
       bool is_assigned() const { return combined_ != 0; }
+      bool is_tombstone() const { return combined_ == 0 && payload_; }
       uint32_t get_depth_lsb() const { return (combined_ >> 8) & 0xff; }
       const key_type & get_prefix_key() const { return prefix_key_; }
       size_t get_ordinal() const { return combined_ & 0xff; }
@@ -219,6 +220,7 @@ namespace radix_cpp {
 
       void reset() {
 	combined_ = 0;
+	payload_ = 0;
       }
 
       void assign(size_t depth, key_type prefix_key, size_t ordinal) {
@@ -235,6 +237,7 @@ namespace radix_cpp {
 	combined_ -= 65536;
 	if (combined_ < 65536) {
 	  combined_ = 0;
+	  payload_ = reinterpret_cast<value_type*>(1); // mark as tombstone
 	  return true;
 	} else {
 	  return false;
@@ -338,6 +341,10 @@ namespace radix_cpp {
 	      hash_ = calc_final_hash(hash0_, ordinal_);
 	      node = table_->read_node(hash_);
 	    }
+	  } else if (node->is_tombstone()) {
+	    // collision
+	    if (++node == nodes_end) node = nodes_start;
+	    offset_++;	    
 	  } else if (!node->is_assigned()) {
 	    // Node is not assigned
 	    ordinal_++;
@@ -392,7 +399,10 @@ namespace radix_cpp {
 		      
 	while (1) {
 	  auto node = table_->read_node(hash_, offset_);
-	  if (node->is_assigned()) {
+	  if (node->is_tombstone()) {
+	    // collision
+	    offset_++;
+	  } else if (node->is_assigned()) {
 	    if (!node->equals(depth_, prefix_key_, 0)) {
 	      // collision
 	      offset_++;
@@ -418,7 +428,10 @@ namespace radix_cpp {
 #endif
 	  } else {
 	    auto node = table_->read_node(hash_, offset_);
-	    if (!node->is_assigned()) {
+	    if (node->is_tombstone()) {
+	      // collision
+	      offset_++;
+	    } else if (!node->is_assigned()) {
 	      // unassigned
 	      ordinal_++;
 	      offset_ = 0;
@@ -454,7 +467,9 @@ namespace radix_cpp {
 	  hash_ = calc_final_hash(hash0_, ordinal_);
 	  while ( 1 ) {
 	    auto node = table_->read_node(hash_, offset_);
-	    if (!node->is_assigned()) {
+	    if (node->is_tombstone()) {
+	      offset_++;
+	    } else if (!node->is_assigned()) {
 #ifdef DEBUG
 	      std::cerr << "down() failed\n";
 #endif
@@ -468,6 +483,8 @@ namespace radix_cpp {
 	}
       }
       size_t get_depth() const noexcept { return depth_; }
+      const key_type & get_prefix_key() const noexcept { return prefix_key_; }
+      size_t get_ordinal() const noexcept { return ordinal_; }
       size_t get_offset() const noexcept { return offset_; }
       size_t get_hash() const noexcept { return hash_; }
       
@@ -491,13 +508,15 @@ namespace radix_cpp {
 	offset_ = 0;
 	while ( 1 ) {
 	  auto node = table_->read_node(hash_, offset_);
-	  if (!node->is_assigned()) {
+	  if (!node->is_tombstone()) {
+	    if (!node->is_assigned()) {
 #ifdef DEBUG
-	    std::cerr << "repair failed\n";
+	      std::cerr << "repair failed\n";
 #endif
-	    abort();
-	  } else if (ptr_ == node->get_payload()) {
-	    return node;
+	      abort();
+	    } else if (ptr_ == node->get_payload()) {
+	      return node;
+	    }
 	  }
 	  offset_++;
 	}
@@ -575,7 +594,10 @@ namespace radix_cpp {
 
       auto node = node_initial;
       while ( 1 ) {
-	if (!node->is_assigned()) {
+	if (node->is_tombstone()) {
+	  // collision
+	  if (++node == nodes_end) node = nodes_start;
+	} else if (!node->is_assigned()) {
 	  break; // not found
 	} else if (!node->equals(depth, prefix_key, ordinal)) {
 	  // collision
@@ -600,7 +622,10 @@ namespace radix_cpp {
 
       auto node = node_initial;
       while ( 1 ) {
-	if (!node->is_assigned()) {
+	if (node->is_tombstone()) {
+	  // collision
+	  if (++node == nodes_end) node = nodes_start;
+	} else if (!node->is_assigned()) {
 	  break; // not found
 	} else if (!node->equals(depth, prefix_key, ordinal)) {
 	  // collision
@@ -715,25 +740,20 @@ namespace radix_cpp {
 	pos.down();
       }
 
+#if 0
       if (table_size_ > bucket_count && get_load_factor() < min_load_factor100) { // Check the load factor
 	resize(table_size_ >> 1);
       }
-
+#endif
+      
       return next_pos;
     }
 
     iterator erase(iterator first, iterator last) {
-      while ( 1 ) {
-	bool is_last = first == last;
+      while ( first != last ) {
 	first = erase(first);
-	if (first == end()) {
-#ifdef DEBUG
-	  std::cerr << "last not found\n";
-#endif
-	  abort();
-	}
-	if (is_last) return first;
       }
+      return first;
     }
 
     size_t erase(const key_type & key) {
@@ -864,7 +884,7 @@ namespace radix_cpp {
 	
 	auto node = node_initial;
 	while ( 1 ) {
-	  if (!node->is_assigned()) {
+	  if (!node->is_assigned()) { // unassigned or tombstone
 	    node->assign(depth, prefix_key, ordinal);
 	    num_entries_++;
 	  } else if (!node->equals(depth, prefix_key, ordinal)) {
