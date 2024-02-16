@@ -262,7 +262,7 @@ namespace radix_cpp {
       }
 
       bool equals(size_t depth, const internal_key_type & prefix_key, size_t ordinal) const {
-	return (depth & 0xff) == get_depth_lsb() && ordinal == get_ordinal() && prefix_key == prefix_key_;
+	return (combined_ & 0xffff) == (((depth & 0xff) << 8) | ordinal) && prefix_key == prefix_key_;
       }
 
     private:
