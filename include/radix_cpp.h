@@ -211,7 +211,7 @@ namespace radix_cpp {
       const value_type * get_payload() const { return payload_; }
       bool is_assigned() const { return combined_ != 0; }
       bool is_tombstone() const { return combined_ == 0 && payload_; }
-      uint32_t get_depth_lsb() const { return (combined_ >> 8) & 0xff; }
+      size_t get_depth_lsb() const { return (combined_ >> 8) & 0xff; }
       const key_type & get_prefix_key() const { return prefix_key_; }
       size_t get_ordinal() const { return combined_ & 0xff; }
       size_t get_value_count() const { return combined_ >> 16; }
@@ -269,22 +269,24 @@ namespace radix_cpp {
       Iterator(TablePtr table) noexcept
 	: table_(table),
 	  ptr_(nullptr),
+	  depth_(0),
 	  ordinal_(0),
 	  offset_(0),
 	  hash0_(0),
 	  hash_(0),
-	  prefix_key_(),
-	  depth_(0) { }     
+	  prefix_key_()
+      { }     
       
-      Iterator(TablePtr table, PayloadPtr ptr, uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset, size_t hash0, size_t hash) noexcept
+      Iterator(TablePtr table, PayloadPtr ptr, size_t depth, key_type prefix_key, size_t ordinal, size_t offset, size_t hash0, size_t hash) noexcept
 	: table_(table),
 	  ptr_(ptr),
+	  depth_(depth),
 	  ordinal_(ordinal),
 	  offset_(offset),
 	  hash0_(hash0),
 	  hash_(hash),
-	  prefix_key_(std::move(prefix_key)),
-	  depth_(depth) { }
+	  prefix_key_(std::move(prefix_key))
+      { }
       
       reference operator*() const noexcept {
 	return *ptr_;
@@ -535,9 +537,8 @@ namespace radix_cpp {
       // * cached values
       // they are all obtainable from ptr_, but it's faster to cache them
       // only temporarily can an iterator might point to a non-final Node (a node that has no ptr_)
-      size_t ordinal_, offset_, hash0_, hash_;
+      size_t depth_, ordinal_, offset_, hash0_, hash_;
       key_type prefix_key_;
-      uint32_t depth_;
     };
     
     using iterator = Iterator<false>;
@@ -591,7 +592,7 @@ namespace radix_cpp {
     
     iterator find(const key_type & key) noexcept {
       if (!table_size_) return end();
-      auto depth = static_cast<uint32_t>(keysize(key));
+      auto depth = keysize(key);
       auto [ ordinal, prefix_key ] = deconstruct(key);
       auto hash0 = calc_unordered_hash(depth, prefix_key);
       auto hash = calc_final_hash(hash0, ordinal);  
@@ -619,7 +620,7 @@ namespace radix_cpp {
 
     const_iterator find(const key_type & key) const noexcept {
       if (!table_size_) return cend();
-      auto depth = static_cast<uint32_t>(keysize(key));
+      auto depth = keysize(key);
       auto [ ordinal, prefix_key ] = deconstruct(key);
       auto hash0 = calc_unordered_hash(depth, prefix_key);
       auto hash = calc_final_hash(hash0, ordinal);  
@@ -647,7 +648,7 @@ namespace radix_cpp {
 
     iterator upper_bound(const key_type& key) {
       if (!table_size_) return end();
-      auto depth = static_cast<uint32_t>(keysize(key));
+      auto depth = keysize(key);
       auto [ ordinal, prefix_key ] = deconstruct(key);
       auto hash0 = calc_unordered_hash(depth, prefix_key);
       auto hash = calc_final_hash(hash0, ordinal);  
@@ -899,7 +900,7 @@ namespace radix_cpp {
       }
       num_inserts_++;
 
-      auto depth = static_cast<uint32_t>(n);
+      auto depth = n;
       auto nodes_start = get_nodes_start(), nodes_end = get_nodes_end();
       iterator it = end();
       Node * final_node = nullptr;
