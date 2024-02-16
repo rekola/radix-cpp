@@ -3,6 +3,8 @@
 #include "radix_cpp.h"
 
 #include <iostream>
+#include <limits>
+#include <cmath>
 
 TEST_CASE( "simple integer sets can be created", "[int_set]" ) {
   radix_cpp::set<uint8_t> S0;
@@ -124,23 +126,32 @@ TEST_CASE( "shared prefixes work with strings", "[string_set_shared_prefix]" ) {
   REQUIRE(it == S.end());
 }
 
-#if 0
-TEST_CASE( "positive floating point keys", "[pos_float_set]") {
+TEST_CASE( "float set", "[float_set]") {
   radix_cpp::set<float> S;
+  S.insert(std::numeric_limits<float>::quiet_NaN());
+  S.insert(std::numeric_limits<float>::infinity());
+  S.insert(0.0f);
+  S.insert(-0.0f);
   S.insert(1.1f);
   S.insert(1000.0f);
+  S.insert(-1000.0f);
   S.insert(4.2f);
+  S.insert(-std::numeric_limits<double>::infinity());
   S.insert(30000000.f);
   S.insert(0);
   auto it = S.begin();
+  REQUIRE(*it++ == -std::numeric_limits<float>::infinity());
+  REQUIRE(*it++ == -1000.0f);
+  REQUIRE(*it++ == -0.0f);
   REQUIRE(*it++ == 0.0f);
   REQUIRE(*it++ == 1.1f);
   REQUIRE(*it++ == 4.2f);
   REQUIRE(*it++ == 1000.0f);
   REQUIRE(*it++ == 30000000.0f);
+  REQUIRE(*it++ == std::numeric_limits<float>::infinity());
+  REQUIRE(std::isnan(*it++));
   REQUIRE(it == S.end());
 }
-#endif
 
 TEST_CASE( "empty set or map iteration doesn't fail", "[empty]") {
   radix_cpp::set<uint8_t> S;
@@ -474,4 +485,16 @@ TEST_CASE( "string set upper_bound", "[string_set_upper_bound]" ) {
   REQUIRE(S.upper_bound("abcd") == S.find("abcde"));
   REQUIRE(S.upper_bound("ccccccccccccc") == S.find("fff"));
   REQUIRE(S.upper_bound("fff") == S.end());
+}
+
+TEST_CASE( "signed integers in set", "[signed_integer_set]") {
+  radix_cpp::set<int> S;
+  S.insert(-10000);
+  S.insert(0);
+  S.insert(10);
+  auto it = S.begin();
+  REQUIRE(*it++ == -10000);
+  REQUIRE(*it++ == 0);
+  REQUIRE(*it++ == 10);
+  REQUIRE(it == S.end());
 }

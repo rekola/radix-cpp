@@ -19,12 +19,20 @@ namespace radix_cpp {
     return std::pair(key, 0);
   }
 
+  inline uint8_t prepare(uint8_t key) {
+    return key;
+  }
+
   inline uint16_t append(uint16_t key, size_t digit) noexcept {
     return static_cast<uint16_t>((key << 8) | digit);
   }
 
   inline std::pair<size_t, std::uint16_t> deconstruct(uint16_t key) noexcept {
     return std::pair(key & 0xff, key >> 8);
+  }
+
+  inline uint16_t prepare(uint16_t key) {
+    return key;
   }
 
   inline uint32_t append(uint32_t key, size_t digit) noexcept {
@@ -35,6 +43,10 @@ namespace radix_cpp {
     return std::pair(key & 0xff, key >> 8);
   }
 
+  inline uint32_t prepare(uint32_t key) {
+    return key;
+  }
+
   inline uint64_t append(uint64_t key, size_t digit) noexcept {
     return static_cast<uint64_t>((key << 8) | digit);
   }
@@ -43,42 +55,36 @@ namespace radix_cpp {
     return std::pair(key & 0xff, key >> 8);
   }
 
-  inline float append(float key, size_t digit) noexcept {
+  inline uint64_t prepare(uint64_t key) {
+    return key;
+  }
+
+  inline uint32_t prepare(float key) {
     union {
       float f;
       uint32_t i;
     } u;
     u.f = key;
-    u.i = append(u.i, digit);
-    return u.f;
-  }
-  
-  inline std::pair<size_t, float> deconstruct(float key) noexcept {
-    union {
-      float f;
-      uint32_t i;
-    } u;
-    u.f = key;
-    return deconstruct(u.i);
+    if (u.i & 0x80000000) {
+      u.i ^= 0xffffffff;
+    } else {
+      u.i ^= 0x80000000;
+    }
+    return u.i;
   }
 
-  inline double append(double key, size_t digit) noexcept {
+  inline uint64_t prepare(double key) noexcept {
     union {
       double f;
       uint64_t i;
     } u;
     u.f = key;
-    u.i = append(u.i, digit);
-    return u.f;
-  }
-
-  inline std::pair<size_t, double> deconstruct(double key) noexcept {
-    union {
-      double f;
-      uint64_t i;
-    } u;
-    u.f = key;
-    return deconstruct(u.i);
+    if (u.i & 0x8000000000000000) {
+      u.i ^= 0xffffffffffffffff;
+    } else {
+      u.i ^= 0x8000000000000000;
+    }
+    return u.i;
   }
 
   inline std::string append(const std::string & key, size_t digit) {
@@ -95,6 +101,26 @@ namespace radix_cpp {
     }
   }
 
+  inline std::string prepare(std::string key) {
+    return key;
+  }
+
+  inline uint8_t prepare(int8_t key) {
+    return static_cast<uint8_t>(key) ^ 0x80;
+  }
+
+  inline uint16_t prepare(int16_t key) {
+    return static_cast<uint16_t>(key) ^ 0x8000;
+  }
+
+  inline uint32_t prepare(int32_t key) {
+    return static_cast<uint32_t>(key) ^ 0x80000000;
+  }
+
+  inline uint64_t prepare(int64_t key) {
+    return static_cast<uint64_t>(key) ^ 0x8000000000000000;
+  }
+
   inline size_t keysize(uint8_t key) noexcept {
     return sizeof(key);
   }
@@ -109,14 +135,6 @@ namespace radix_cpp {
 
   inline size_t keysize(uint64_t key) noexcept {
     return sizeof(key);
-  }
-
-  inline size_t keysize(float key) noexcept {
-    return sizeof(float);
-  }
-
-  inline size_t keysize(double key) noexcept {
-    return sizeof(float);
   }
 
   inline size_t keysize(const std::string & key) noexcept {
@@ -197,8 +215,9 @@ namespace radix_cpp {
     static constexpr size_t bucket_count = 256; // bucket count for the ordered portion of the key
     static constexpr size_t min_load_factor100 = 15;
     static constexpr size_t max_load_factor100 = 60;
-    
+
     using key_type = Key;
+    using internal_key_type = decltype(prepare(Key{}));
     using mapped_type = T;
     using value_type = typename std::conditional<is_set, Key, std::pair<Key, T>>::type;
     using size_type = size_t;
@@ -212,7 +231,7 @@ namespace radix_cpp {
       bool is_assigned() const { return combined_ != 0; }
       bool is_tombstone() const { return combined_ == 0 && payload_; }
       size_t get_depth_lsb() const { return (combined_ >> 8) & 0xff; }
-      const key_type & get_prefix_key() const { return prefix_key_; }
+      const internal_key_type & get_prefix_key() const { return prefix_key_; }
       size_t get_ordinal() const { return combined_ & 0xff; }
       size_t get_value_count() const { return combined_ >> 16; }
 
@@ -221,8 +240,8 @@ namespace radix_cpp {
 	payload_ = 0;
       }
 
-      void assign(size_t depth, key_type prefix_key, size_t ordinal) {
-	new (static_cast<void*>(&(prefix_key_))) key_type(std::move(prefix_key));
+      void assign(size_t depth, internal_key_type prefix_key, size_t ordinal) {
+	new (static_cast<void*>(&(prefix_key_))) internal_key_type(std::move(prefix_key));
 	combined_ = (1 << 16) | ((depth & 0xff) << 8) | ordinal;
 	payload_ = nullptr;
       }
@@ -242,14 +261,14 @@ namespace radix_cpp {
 	}
       }
 
-      bool equals(size_t depth, const key_type & prefix_key, size_t ordinal) const {
+      bool equals(size_t depth, const internal_key_type & prefix_key, size_t ordinal) const {
 	return (depth & 0xff) == get_depth_lsb() && ordinal == get_ordinal() && prefix_key == prefix_key_;
       }
 
     private:
       uint64_t combined_; // from low to high, bits 1-8 = ordinal, 9-16 = lsb of depth, the rest = value count
       value_type * payload_;
-      key_type prefix_key_;
+      internal_key_type prefix_key_;
     };
 
   public:
@@ -277,7 +296,7 @@ namespace radix_cpp {
 	  prefix_key_()
       { }     
       
-      Iterator(TablePtr table, PayloadPtr ptr, size_t depth, key_type prefix_key, size_t ordinal, size_t offset, size_t hash0, size_t hash) noexcept
+      Iterator(TablePtr table, PayloadPtr ptr, size_t depth, internal_key_type prefix_key, size_t ordinal, size_t offset, size_t hash0, size_t hash) noexcept
 	: table_(table),
 	  ptr_(ptr),
 	  depth_(depth),
@@ -513,7 +532,7 @@ namespace radix_cpp {
       }
 
       size_t get_depth() const noexcept { return depth_; }
-      const key_type & get_prefix_key() const noexcept { return prefix_key_; }
+      const internal_key_type & get_prefix_key() const noexcept { return prefix_key_; }
       size_t get_ordinal() const noexcept { return ordinal_; }
       size_t get_offset() const noexcept { return offset_; }
       size_t get_hash() const noexcept { return hash_; }
@@ -524,7 +543,7 @@ namespace radix_cpp {
       void clear() {
 	ptr_ = nullptr;
 	depth_ = 0;
-	prefix_key_ = key_type{};
+	prefix_key_ = internal_key_type{};
 	ordinal_ = 0;
 	offset_ = 0;
 	hash0_ = 0;
@@ -538,7 +557,7 @@ namespace radix_cpp {
       // they are all obtainable from ptr_, but it's faster to cache them
       // only temporarily can an iterator might point to a non-final Node (a node that has no ptr_)
       size_t depth_, ordinal_, offset_, hash0_, hash_;
-      key_type prefix_key_;
+      internal_key_type prefix_key_;
     };
     
     using iterator = Iterator<false>;
@@ -578,7 +597,7 @@ namespace radix_cpp {
       for (size_t i = 0; i < table_size_; i++) {
 	auto & node = nodes_[i];
 	if (node.is_assigned()) {
-	  node.get_prefix_key().~key_type();
+	  node.get_prefix_key().~internal_key_type();
 	  if (node.get_payload()) {
 	    node.get_payload()->~value_type();
 	  }
@@ -759,7 +778,7 @@ namespace radix_cpp {
       num_final_entries_--;
 	
       if (node->dec_value_count()) {
-	node->get_prefix_key().~key_type();
+	node->get_prefix_key().~internal_key_type();
 	num_entries_--;
       }
       
@@ -767,7 +786,7 @@ namespace radix_cpp {
       while ( pos.get_depth() ) {
 	auto node = read_node(pos.get_hash(), pos.get_offset());
 	if (node->dec_value_count()) {
-	  node->get_prefix_key().~key_type();
+	  node->get_prefix_key().~internal_key_type();
 	  num_entries_--;
 	}
 	pos.down();
@@ -889,10 +908,11 @@ namespace radix_cpp {
 
     size_t get_load_factor(size_t nodes_to_insert = 0) const noexcept { return 100 * (num_entries_ + nodes_to_insert) / table_size_; }
     
-    std::pair<Node *, iterator> create_nodes_for_key(key_type key) {
+    std::pair<Node *, iterator> create_nodes_for_key(key_type key0) {
       if (!nodes_) {
 	init(bucket_count);
       }
+      auto key = prepare(std::move(key0));
       auto n = keysize(key);
       // Make sure the hash has enough space for the whole key
       while (get_load_factor(n) >= max_load_factor100) {
@@ -1026,8 +1046,8 @@ namespace radix_cpp {
 
     // hash calculation functions use Murmur3 to calculate hash for a Node.
     // Murmur3 operations are specialized for both 32 bit and 64 bit size_t
-    static inline size_t calc_unordered_hash(size_t depth, const key_type & prefix_key) noexcept {
-      auto k1 = murmur3_mix_k1(std::hash<key_type>{}(prefix_key));
+    static inline size_t calc_unordered_hash(size_t depth, const internal_key_type & prefix_key) noexcept {
+      auto k1 = murmur3_mix_k1(std::hash<internal_key_type>{}(prefix_key));
       return murmur3_mix_h1(depth, k1);
     }
 

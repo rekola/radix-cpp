@@ -25,8 +25,8 @@ complexity of O(n) = n log n.
 Iterators are automatically repaired if the underlying table changes,
 so they are stable.
 
-Currently only strings and unsigned integers are supported as keys,
-but more support is forthcoming.
+Currently only integers, floats, doubles and strings are supported as
+keys, but more support is forthcoming.
 
 ### Time Complexity
 
@@ -104,7 +104,6 @@ final node. The offset is used for probing in case of collisions.
 ### Limitations and Future Plans
 
 - Maximum number of elements on 64-bit system is is 2^56
-- No signed types (digits of two's complement numbers are not ordered correctly)
 - 32-bit support is untested
 - How to sort std::any?
 - Unordered iteration is need (e.g. for set union and intersection)
