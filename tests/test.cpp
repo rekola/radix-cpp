@@ -2,6 +2,8 @@
 
 #include "radix_cpp.h"
 
+#include <iostream>
+
 TEST_CASE( "simple integer sets can be created", "[int_set]" ) {
   radix_cpp::set<uint8_t> S0;
   S0.insert(0);
@@ -438,4 +440,38 @@ TEST_CASE( "erase range", "[erase_range]") {
   REQUIRE(it == S.end());
   REQUIRE(S.begin() == S.end());
   REQUIRE(S.size() == 0);
+}
+
+TEST_CASE( "integer set upper_bound", "[integer_set_upper_bound]" ) {
+  radix_cpp::set<uint32_t> S;
+  S.insert(0);
+  S.insert(10);
+  S.insert(1000);
+  S.insert(10000);
+  S.insert(1000000000);
+  REQUIRE(S.upper_bound(0) == S.find(10));
+  REQUIRE(S.upper_bound(1) == S.find(10));
+  REQUIRE(S.upper_bound(999) == S.find(1000));
+  REQUIRE(S.upper_bound(1000) == S.find(10000));
+  REQUIRE(S.upper_bound(20000) == S.find(1000000000));
+  REQUIRE(S.upper_bound(2000000000) == S.end());
+}
+
+TEST_CASE( "string set upper_bound", "[string_set_upper_bound]" ) {
+  radix_cpp::set<std::string> S;
+  S.insert("abc");
+  S.insert("abcd");
+  S.insert("abcde");
+  S.insert("fff");
+  
+  REQUIRE(S.upper_bound("") == S.find("abc"));
+
+  S.insert("");
+
+  REQUIRE(S.upper_bound("") == S.find("abc"));
+
+  REQUIRE(S.upper_bound("ab") == S.find("abc"));
+  REQUIRE(S.upper_bound("abcd") == S.find("abcde"));
+  REQUIRE(S.upper_bound("ccccccccccccc") == S.find("fff"));
+  REQUIRE(S.upper_bound("fff") == S.end());
 }

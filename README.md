@@ -35,6 +35,7 @@ but more support is forthcoming.
 | Search | Θ(1) | O(n) |
 | Insert | Θ(w) | O(w*n) |
 | Delete | Θ(w) | O(w*n) |
+| upper_bound() | ? | ? |
 
 * w is the key length in bytes
 

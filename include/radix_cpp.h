@@ -6,8 +6,6 @@
 #include <string>
 #include <stdexcept>
 
-// #define DEBUG
-
 #ifdef DEBUG
 #include <iostream>
 #endif
@@ -276,7 +274,7 @@ namespace radix_cpp {
 	  hash0_(0),
 	  hash_(0),
 	  prefix_key_(),
-	  depth_(0) { }
+	  depth_(0) { }     
       
       Iterator(TablePtr table, PayloadPtr ptr, uint32_t depth, key_type prefix_key, size_t ordinal, size_t offset, size_t hash0, size_t hash) noexcept
 	: table_(table),
@@ -389,43 +387,50 @@ namespace radix_cpp {
       }
       
       void fast_forward() noexcept {
-	// first look for 0-length node (depth = ordinal = 0)
-	depth_ = 0;
-	offset_ = 0;
-	prefix_key_ = key_type();
-	ordinal_ = 0;
-	hash0_ = calc_unordered_hash(depth_, prefix_key_);
-	hash_ = calc_final_hash(hash0_, ordinal_);
-		      
-	while (1) {
-	  auto node = table_->read_node(hash_, offset_);
-	  if (node->is_tombstone()) {
-	    // collision
-	    offset_++;
-	  } else if (node->is_assigned()) {
-	    if (!node->equals(depth_, prefix_key_, 0)) {
+	if (depth_ == 0) {
+	  hash0_ = calc_unordered_hash(depth_, prefix_key_);
+	  hash_ = calc_final_hash(hash0_, ordinal_);
+
+	  // first look for 0-length node (depth = ordinal = 0)
+	  while (1) {
+	    auto node = table_->read_node(hash_, offset_);
+	    if (node->is_tombstone()) {
 	      // collision
 	      offset_++;
-	      continue;
-	    } else if (node->get_payload()) {
-	      set_ptr(node->get_payload());
-	      return;
+	    } else if (node->is_assigned()) {
+	      if (!node->equals(depth_, prefix_key_, 0)) {
+		// collision
+		offset_++;
+		continue;
+	      } else if (node->get_payload()) {
+		set_ptr(node->get_payload());
+		return;
+	      }
 	    }
+	    break;
 	  }
-	  break;
+	
+	  depth_ = 1;
+	  offset_ = 0;
+	  hash0_ = calc_unordered_hash(depth_, prefix_key_);
+	  hash_ = calc_final_hash(hash0_, ordinal_);
 	}
 	
-	depth_ = 1;
-	offset_ = 0;
- 	hash0_ = calc_unordered_hash(depth_, prefix_key_);
- 	hash_ = calc_final_hash(hash0_, ordinal_);
-       
 	while ( 1 ) {
 	  if (ordinal_ == bucket_count) {
-#ifdef DEBUG
-	    std::cerr << "fast-forward failed\n";
-	    abort();
-#endif
+	    if (depth_ <= 1) {
+	      clear(); // become an end iterator
+	      break;
+	    } else {
+	      depth_--;
+	      auto [ parent_ordinal, parent_prefix_key ] = deconstruct(prefix_key_);
+	      prefix_key_ = parent_prefix_key;
+	      ordinal_ = parent_ordinal + 1;
+	      offset_ = 0;
+	      ptr_ = nullptr;
+	      hash0_ = calc_unordered_hash(depth_, prefix_key_);
+	      hash_ = calc_final_hash(hash0_, ordinal_);
+	    }
 	  } else {
 	    auto node = table_->read_node(hash_, offset_);
 	    if (node->is_tombstone()) {
@@ -638,6 +643,32 @@ namespace radix_cpp {
 	}
       }
       return cend();
+    }
+
+    iterator upper_bound(const key_type& key) {
+      if (!table_size_) return end();
+      auto depth = static_cast<uint32_t>(keysize(key));
+      auto [ ordinal, prefix_key ] = deconstruct(key);
+      auto hash0 = calc_unordered_hash(depth, prefix_key);
+      auto hash = calc_final_hash(hash0, ordinal);  
+      auto node_initial = read_node(hash);
+      auto nodes_start = get_nodes_start(), nodes_end = get_nodes_end();
+      
+      auto node = node_initial;
+      while ( 1 ) {
+	if (node->is_tombstone() || (node->is_assigned() && !node->equals(depth, prefix_key, ordinal))) {
+	  // collision
+	  if (++node == nodes_end) node = nodes_start;
+	} else {
+	  iterator it(this, node->get_payload(), depth, prefix_key, ordinal, static_cast<size_t>(node - node_initial), hash0, hash);
+	  if (node->is_assigned() && node->get_payload()) {
+	    it++;
+	  } else {
+	    it.fast_forward();
+	  }
+	  return it;
+	}
+      }
     }
 
     size_t count(const key_type & key) const noexcept {
