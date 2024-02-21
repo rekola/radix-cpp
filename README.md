@@ -107,7 +107,7 @@ final node. The offset is used for probing in case of collisions.
 - NaNs are sorted as they were larger than any other value
 - 32-bit support is untested
 - How to sort std::any?
-- Unordered iteration is need (e.g. for set union and intersection)
+- Unordered iteration is needed (e.g. for set union and intersection)
 
 ## Extending types
 
@@ -119,4 +119,7 @@ To implement set and map for custom type, the following free functions must be d
 | std::pair<key_type, size_t> deconstruct(key_type key) | Returns a pair with the numeric value of the least significant digit of the key and the key with the least significant digit removed |
 | size_t keysize(key_type key) | Returns the number of digits in the key |
 
-Additionally, there must exist a specialization of std::hash for the custom key.
+Additionally, there must exist a specialization of std::hash for
+key_type. Signed integers and floating point numbers are not naturally
+ascending, and in such case the initial deconstruct also converts the
+data to ordered binary type.
