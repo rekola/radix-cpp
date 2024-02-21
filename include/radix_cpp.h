@@ -720,6 +720,14 @@ namespace radix_cpp {
       return emplace(keyval).first;
     }
 
+    template<class InputIt>
+    void insert(InputIt first, InputIt last) {
+      while (first != last) {
+	insert(*first);
+	first++;
+      }
+    }
+
     template <typename Q = mapped_type>
     typename std::enable_if<!std::is_void<Q>::value, Q&>::type operator[](const key_type& key) noexcept {
       auto it = find(key);
@@ -806,7 +814,7 @@ namespace radix_cpp {
       }
     }
     iterator end() noexcept {
-      // iterator is by default and end iterator (the depth is zero)
+      // iterator is by default and end iterator (ptr is nil)
       return iterator(this);
     }
 

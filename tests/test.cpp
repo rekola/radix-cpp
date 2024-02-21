@@ -498,3 +498,22 @@ TEST_CASE( "signed integers in set", "[signed_integer_set]") {
   REQUIRE(*it++ == 10);
   REQUIRE(it == S.end());
 }
+
+TEST_CASE( "insert range", "[insert_range]") {
+  std::vector<double> V;
+  for (size_t i = 0; i < 1000; i++) {
+    V.push_back(0.1 * static_cast<double>(i));
+  }
+  radix_cpp::set<double> S;
+  S.insert(V.begin(), V.end());
+  REQUIRE(S.size() == 1000);
+  auto it = S.begin();
+  REQUIRE(*it++ == 0.0);
+  REQUIRE(*it++ == 0.1);
+  REQUIRE(*it++ == 0.2);
+  it = S.find(0.1 * static_cast<double>(998));
+  REQUIRE(it != S.end());
+  REQUIRE(*it++ == 0.1 * static_cast<double>(998));
+  REQUIRE(*it++ == 0.1 * static_cast<double>(999));
+  REQUIRE(it == S.end());
+}
