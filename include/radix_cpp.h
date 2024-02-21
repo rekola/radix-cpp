@@ -11,55 +11,9 @@
 #endif
 
 namespace radix_cpp {
-  inline uint8_t append(uint8_t key, size_t digit) noexcept {
-    return static_cast<uint8_t>(digit);
-  }
-
-  inline std::pair<size_t, std::uint8_t> deconstruct(uint8_t key) noexcept {
-    return std::pair(key, 0);
-  }
-
-  inline uint8_t prepare(uint8_t key) {
-    return key;
-  }
-
-  inline uint16_t append(uint16_t key, size_t digit) noexcept {
-    return static_cast<uint16_t>((key << 8) | digit);
-  }
-
-  inline std::pair<size_t, std::uint16_t> deconstruct(uint16_t key) noexcept {
-    return std::pair(key & 0xff, key >> 8);
-  }
-
-  inline uint16_t prepare(uint16_t key) {
-    return key;
-  }
-
-  inline uint32_t append(uint32_t key, size_t digit) noexcept {
-    return static_cast<uint32_t>((key << 8) | digit);
-  }
-
-  inline std::pair<size_t, std::uint32_t> deconstruct(uint32_t key) noexcept {
-    return std::pair(key & 0xff, key >> 8);
-  }
-
-  inline uint32_t prepare(uint32_t key) {
-    return key;
-  }
-
-  inline uint64_t append(uint64_t key, size_t digit) noexcept {
-    return static_cast<uint64_t>((key << 8) | digit);
-  }
-
-  inline std::pair<size_t, std::uint64_t> deconstruct(uint64_t key) noexcept {
-    return std::pair(key & 0xff, key >> 8);
-  }
-
-  inline uint64_t prepare(uint64_t key) {
-    return key;
-  }
-
-  inline uint32_t prepare(float key) {
+  // floating point numbers
+  
+  inline std::pair<size_t, uint32_t> deconstruct(float key) {
     union {
       float f;
       uint32_t i;
@@ -70,10 +24,10 @@ namespace radix_cpp {
     } else {
       u.i ^= 0x80000000;
     }
-    return u.i;
+    return std::pair(u.i & 0xff, u.i >> 8);
   }
 
-  inline uint64_t prepare(double key) noexcept {
+  inline std::pair<size_t, uint64_t> deconstruct(double key) noexcept {
     union {
       double f;
       uint64_t i;
@@ -84,61 +38,77 @@ namespace radix_cpp {
     } else {
       u.i ^= 0x8000000000000000;
     }
-    return u.i;
+    return std::pair(u.i & 0xff, u.i >> 8);
   }
 
-  inline std::string append(const std::string & key, size_t digit) {
-    std::string key2 = key;
-    key2 += static_cast<char>(static_cast<uint8_t>(digit));
-    return key2;
-  }
+  // signed integers
   
-  inline std::pair<size_t, std::string> deconstruct(const std::string & key) noexcept {
-    if (key.empty()) {
-      return std::pair(0, key);
-    } else {
-      return std::pair(static_cast<uint8_t>(key.back()), key.substr(0, key.size() - 1));
-    }
+  inline std::pair<size_t, uint8_t> deconstruct(int8_t key) {
+    uint8_t i = static_cast<uint8_t>(key) ^ 0x80;
+    return std::pair(i & 0xff, i >> 8);
   }
 
-  inline std::string prepare(std::string key) {
+  inline std::pair<size_t, uint16_t> deconstruct(int16_t key) {
+    uint16_t i = static_cast<uint16_t>(key) ^ 0x8000;
+    return std::pair(i & 0xff, i >> 8);
+  }
+
+  inline std::pair<size_t, uint32_t> deconstruct(int32_t key) {
+    uint32_t i = static_cast<uint32_t>(key) ^ 0x80000000;
+    return std::pair(i & 0xff, i >> 8);
+  }
+
+  inline std::pair<size_t, uint64_t> deconstruct(int64_t key) {
+    uint64_t i = static_cast<uint64_t>(key) ^ 0x8000000000000000;
+    return std::pair(i & 0xff, i >> 8);
+  }
+
+  // string
+
+  inline std::string append(std::string key, size_t digit) {
+    key += static_cast<char>(static_cast<uint8_t>(digit));
     return key;
   }
-
-  inline uint8_t prepare(int8_t key) {
-    return static_cast<uint8_t>(key) ^ 0x80;
-  }
-
-  inline uint16_t prepare(int16_t key) {
-    return static_cast<uint16_t>(key) ^ 0x8000;
-  }
-
-  inline uint32_t prepare(int32_t key) {
-    return static_cast<uint32_t>(key) ^ 0x80000000;
-  }
-
-  inline uint64_t prepare(int64_t key) {
-    return static_cast<uint64_t>(key) ^ 0x8000000000000000;
-  }
-
-  inline size_t keysize(uint8_t key) noexcept {
-    return sizeof(key);
-  }
-
-  inline size_t keysize(uint16_t key) noexcept {
-    return sizeof(key);
-  }
-
-  inline size_t keysize(uint32_t key) noexcept {
-    return sizeof(key);
-  }
-
-  inline size_t keysize(uint64_t key) noexcept {
-    return sizeof(key);
+  
+  inline std::pair<size_t, std::string> deconstruct(std::string key) noexcept {
+    if (key.empty()) {
+      return std::pair(0, std::move(key));
+    } else {
+      auto ord = static_cast<uint8_t>(key.back());
+      key.pop_back();
+      return std::pair(ord, std::move(key));
+    }
   }
 
   inline size_t keysize(const std::string & key) noexcept {
     return key.size();
+  }
+
+  // uint8_t
+  
+  inline uint8_t append(uint8_t key, size_t digit) noexcept {
+    return static_cast<uint8_t>(digit);
+  }
+
+  inline std::pair<size_t, std::uint8_t> deconstruct(uint8_t key) noexcept {
+    return std::pair(key, 0);
+  }
+
+  // Fallback
+
+  template<typename T>
+  T append(T key, size_t digit) noexcept {
+    return static_cast<T>((key << 8) | digit);
+  }
+
+  template<typename T>
+  std::pair<size_t, T> deconstruct(T key) noexcept {
+    return std::pair(key & 0xff, key >> 8);
+  }
+
+  template<typename T>
+  size_t keysize(T key) noexcept {
+    return sizeof(key);
   }
 
   /* MurmurHash3 was written by Austin Appleby, and is placed in the public domain.
@@ -217,7 +187,7 @@ namespace radix_cpp {
     static constexpr size_t max_load_factor100 = 60;
 
     using key_type = Key;
-    using internal_key_type = decltype(prepare(Key{}));
+    using internal_key_type = decltype(deconstruct(Key{}).second);
     using mapped_type = T;
     using value_type = typename std::conditional<is_set, Key, std::pair<Key, T>>::type;
     using size_type = size_t;
@@ -229,7 +199,7 @@ namespace radix_cpp {
       value_type * get_payload() { return payload_; }
       const value_type * get_payload() const { return payload_; }
       bool is_assigned() const { return combined_ != 0; }
-      bool is_tombstone() const { return combined_ == 0 && payload_; }
+      bool is_tombstone() const { return payload_ == reinterpret_cast<value_type*>(1); }
       size_t get_depth_lsb() const { return (combined_ >> 8) & 0xff; }
       const internal_key_type & get_prefix_key() const { return prefix_key_; }
       size_t get_ordinal() const { return combined_ & 0xff; }
@@ -330,7 +300,7 @@ namespace radix_cpp {
 	  auto node = repair_and_get_node();
 	  if (node->get_value_count() > 1) {
 	    depth_++;
-	    prefix_key_ = append(prefix_key_, ordinal_);
+	    prefix_key_ = append(std::move(prefix_key_), ordinal_);
 	    ordinal_ = 0;
 	    hash0_ = calc_unordered_hash(depth_, prefix_key_);
 	  } else {
@@ -351,25 +321,27 @@ namespace radix_cpp {
 	      clear(); // become an end iterator
 	      return *this;
 	    } else {
-	      auto [ parent_ordinal, parent_prefix_key ] = deconstruct(prefix_key_);
+	      auto [ parent_ordinal, parent_prefix_key ] = deconstruct(std::move(prefix_key_));
 	      depth_--;
-	      prefix_key_ = parent_prefix_key;
+	      prefix_key_ = std::move(parent_prefix_key);
 	      ordinal_ = parent_ordinal + 1;
 	      offset_ = 0;
 	      hash0_ = calc_unordered_hash(depth_, prefix_key_);
 	      hash_ = calc_final_hash(hash0_, ordinal_);
 	      node = table_->read_node(hash_);
 	    }
-	  } else if (node->is_tombstone()) {
-	    // collision
-	    if (++node == nodes_end) node = nodes_start;
-	    offset_++;	    
 	  } else if (!node->is_assigned()) {
-	    // Node is not assigned
-	    ordinal_++;
-	    offset_ = 0;
-	    hash_ = calc_final_hash(hash0_, ordinal_);
-	    node = table_->read_node(hash_);
+	    if (node->is_tombstone()) {
+	      // collision
+	      if (++node == nodes_end) node = nodes_start;
+	      offset_++;
+	    } else {
+	      // Node is not assigned
+	      ordinal_++;
+	      offset_ = 0;
+	      hash_ = calc_final_hash(hash0_, ordinal_);
+	      node = table_->read_node(hash_);
+	    }
 	  } else if (!node->equals(depth_, prefix_key_, ordinal_)) {
 	    // collision
 	    if (++node == nodes_end) node = nodes_start;
@@ -381,7 +353,7 @@ namespace radix_cpp {
 	  } else {
 	    // non-final node => go up the tree
 	    depth_++;
-	    prefix_key_ = append(prefix_key_, ordinal_);
+	    prefix_key_ = append(std::move(prefix_key_), ordinal_);
 	    ordinal_ = offset_ = 0;
 	    offset_ = 0;
 	    hash0_ = calc_unordered_hash(depth_, prefix_key_);
@@ -415,10 +387,7 @@ namespace radix_cpp {
 	  // first look for 0-length node (depth = ordinal = 0)
 	  while (1) {
 	    auto node = table_->read_node(hash_, offset_);
-	    if (node->is_tombstone()) {
-	      // collision
-	      offset_++;
-	    } else if (node->is_assigned()) {
+	    if (node->is_assigned()) {
 	      if (!node->equals(depth_, prefix_key_, 0)) {
 		// collision
 		offset_++;
@@ -427,6 +396,9 @@ namespace radix_cpp {
 		set_ptr(node->get_payload());
 		return;
 	      }
+	    } else if (node->is_tombstone()) {
+	      // collision
+	      offset_++;
 	    }
 	    break;
 	  }
@@ -444,8 +416,8 @@ namespace radix_cpp {
 	      break;
 	    } else {
 	      depth_--;
-	      auto [ parent_ordinal, parent_prefix_key ] = deconstruct(prefix_key_);
-	      prefix_key_ = parent_prefix_key;
+	      auto [ parent_ordinal, parent_prefix_key ] = deconstruct(std::move(prefix_key_));
+	      prefix_key_ = std::move(parent_prefix_key);
 	      ordinal_ = parent_ordinal + 1;
 	      offset_ = 0;
 	      ptr_ = nullptr;
@@ -454,14 +426,16 @@ namespace radix_cpp {
 	    }
 	  } else {
 	    auto node = table_->read_node(hash_, offset_);
-	    if (node->is_tombstone()) {
-	      // collision
-	      offset_++;
-	    } else if (!node->is_assigned()) {
-	      // unassigned
-	      ordinal_++;
-	      offset_ = 0;
-	      hash_ = calc_final_hash(hash0_, ordinal_);
+	    if (!node->is_assigned()) {
+	      if (node->is_tombstone()) {
+		// collision
+		offset_++;
+	      } else {
+		// unassigned
+		ordinal_++;
+		offset_ = 0;
+		hash_ = calc_final_hash(hash0_, ordinal_);
+	      }
 	    } else if (!node->equals(depth_, prefix_key_, ordinal_)) {
 	      // collision
 	      offset_++;
@@ -470,7 +444,7 @@ namespace radix_cpp {
 	      return;
 	    } else {
 	      depth_++;
-	      prefix_key_ = append(prefix_key_, ordinal_);
+	      prefix_key_ = append(std::move(prefix_key_), ordinal_);
 	      ordinal_ = 0;
 	      hash0_ = calc_unordered_hash(depth_, prefix_key_);
 	      hash_ = calc_final_hash(hash0_, ordinal_);
@@ -484,8 +458,8 @@ namespace radix_cpp {
 	  clear(); // become an end iterator
 	} else {
 	  depth_--;
-	  auto [ parent_ordinal, parent_prefix_key ] = deconstruct(prefix_key_);
-	  prefix_key_ = parent_prefix_key;
+	  auto [ parent_ordinal, parent_prefix_key ] = deconstruct(std::move(prefix_key_));
+	  prefix_key_ = std::move(parent_prefix_key);
 	  ordinal_ = parent_ordinal;
 	  offset_ = 0;
 	  ptr_ = nullptr;
@@ -493,13 +467,15 @@ namespace radix_cpp {
 	  hash_ = calc_final_hash(hash0_, ordinal_);
 	  while ( 1 ) {
 	    auto node = table_->read_node(hash_, offset_);
-	    if (node->is_tombstone()) {
-	      offset_++;
-	    } else if (!node->is_assigned()) {
+	    if (!node->is_assigned()) {
+	      if (node->is_tombstone()) {
+		offset_++;
+	      } else {
 #ifdef DEBUG
-	      std::cerr << "down() failed\n";
+		std::cerr << "down() failed\n";
 #endif
-	      abort();
+		abort();
+	      }
 	    } else if (node->equals(depth_, prefix_key_, ordinal_)) {
 	      break;
 	    } else {
@@ -516,15 +492,15 @@ namespace radix_cpp {
 	offset_ = 0;
 	while ( 1 ) {
 	  auto node = table_->read_node(hash_, offset_);
-	  if (!node->is_tombstone()) {
-	    if (!node->is_assigned()) {
+	  if (!node->is_assigned()) {
+	    if (!node->is_tombstone()) {
 #ifdef DEBUG
 	      std::cerr << "repair failed\n";
 #endif
 	      abort();
-	    } else if (ptr_ == node->get_payload()) {
-	      return node;
 	    }
+	  } else if (ptr_ == node->get_payload()) {
+	    return node;
 	  }
 	  offset_++;
 	}
@@ -611,8 +587,8 @@ namespace radix_cpp {
     
     iterator find(const key_type & key) noexcept {
       if (!table_size_) return end();
-      auto depth = keysize(key);
       auto [ ordinal, prefix_key ] = deconstruct(key);
+      auto depth = keysize(key);
       auto hash0 = calc_unordered_hash(depth, prefix_key);
       auto hash = calc_final_hash(hash0, ordinal);  
       auto node_initial = read_node(hash);
@@ -620,11 +596,13 @@ namespace radix_cpp {
 
       auto node = node_initial;
       while ( 1 ) {
-	if (node->is_tombstone()) {
-	  // collision
-	  if (++node == nodes_end) node = nodes_start;
-	} else if (!node->is_assigned()) {
-	  break; // not found
+	if (!node->is_assigned()) {
+	  if (node->is_tombstone()) {
+	    // collision
+	    if (++node == nodes_end) node = nodes_start;
+	  } else {
+	    break; // not found
+	  }
 	} else if (!node->equals(depth, prefix_key, ordinal)) {
 	  // collision
 	  if (++node == nodes_end) node = nodes_start;
@@ -639,8 +617,8 @@ namespace radix_cpp {
 
     const_iterator find(const key_type & key) const noexcept {
       if (!table_size_) return cend();
-      auto depth = keysize(key);
       auto [ ordinal, prefix_key ] = deconstruct(key);
+      auto depth = keysize(prefix_key);
       auto hash0 = calc_unordered_hash(depth, prefix_key);
       auto hash = calc_final_hash(hash0, ordinal);  
       auto node_initial = read_node(hash);
@@ -648,11 +626,13 @@ namespace radix_cpp {
 
       auto node = node_initial;
       while ( 1 ) {
-	if (node->is_tombstone()) {
-	  // collision
-	  if (++node == nodes_end) node = nodes_start;
-	} else if (!node->is_assigned()) {
-	  break; // not found
+	if (!node->is_assigned()) {
+	  if (node->is_tombstone()) {
+	    // collision
+	    if (++node == nodes_end) node = nodes_start;
+	  } else {
+	    break; // not found
+	  }
 	} else if (!node->equals(depth, prefix_key, ordinal)) {
 	  // collision
 	  if (++node == nodes_end) node = nodes_start;
@@ -667,8 +647,8 @@ namespace radix_cpp {
 
     iterator upper_bound(const key_type& key) {
       if (!table_size_) return end();
-      auto depth = keysize(key);
       auto [ ordinal, prefix_key ] = deconstruct(key);
+      auto depth = keysize(key);
       auto hash0 = calc_unordered_hash(depth, prefix_key);
       auto hash = calc_final_hash(hash0, ordinal);  
       auto node_initial = read_node(hash);
@@ -912,8 +892,8 @@ namespace radix_cpp {
       if (!nodes_) {
 	init(bucket_count);
       }
-      auto key = prepare(std::move(key0));
-      auto n = keysize(key);
+      auto n = keysize(key0);
+      auto [ ordinal, prefix_key ] = deconstruct(std::move(key0));
       // Make sure the hash has enough space for the whole key
       while (get_load_factor(n) >= max_load_factor100) {
 	resize(table_size_ * 2);
@@ -928,7 +908,6 @@ namespace radix_cpp {
       // insert digits from least significant to most significant
       // even if keysize is zero, add at least one digit (for empty strings)
       for ( size_t i = 0; i < (n == 0 ? 1 : n); i++, depth-- ) {
-	auto [ ordinal, prefix_key ] = deconstruct(key);
 	auto hash0 = calc_unordered_hash(depth, prefix_key);
 	auto hash = calc_final_hash(hash0, ordinal);
 	auto node_initial = read_node(hash);
@@ -946,14 +925,17 @@ namespace radix_cpp {
 	  } else {
 	    node->inc_value_count();
 	  }
-	  if (!final_node) {
-	    final_node = node;
-	    it = iterator(this, node->get_payload(), depth, prefix_key, ordinal, static_cast<size_t>(node - node_initial), hash0, hash);
-	  }
 	  break;
 	}
-	
-	key = std::move(prefix_key);
+
+	if (!final_node) {
+	  final_node = node;
+	  it = iterator(this, node->get_payload(), depth, prefix_key, ordinal, static_cast<size_t>(node - node_initial), hash0, hash);
+	}
+
+	auto [ next_ordinal, next_prefix_key ] = deconstruct(std::move(prefix_key));
+	ordinal = next_ordinal;
+	prefix_key = std::move(next_prefix_key);
       }
       
       return std::pair(final_node, it);
