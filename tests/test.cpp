@@ -517,3 +517,15 @@ TEST_CASE( "insert range", "[insert_range]") {
   REQUIRE(*it++ == 0.1 * static_cast<double>(999));
   REQUIRE(it == S.end());
 }
+
+TEST_CASE( "subnormal numbers", "[subnormals]") {
+  radix_cpp::set<double> S;
+  S.insert(std::numeric_limits<double>::min() / 2.0);
+  S.insert(std::numeric_limits<double>::min() / -2.0);
+  S.insert(0);
+  auto it = S.begin();
+  REQUIRE(*it++ < 0.0);
+  REQUIRE(*it++ == 0.0);
+  REQUIRE(*it++ > 0.0);
+  REQUIRE(it == S.end());
+}
