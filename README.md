@@ -64,15 +64,15 @@ arbitrary size.
 
 ### Node
 
-```c++
-struct Node {
-  value_type * keyval;
-  size_t value_count;
-  key_type prefix_key;
-  uint32_t depth;
-  uint8_t flags, ordinal;
-};
-```
+A Node contains the following data:
+
+| Datum | Description |
+| - | - |
+| payload | pointer to the key or the key/value pair, or 1 for tomb stones |
+| prefix key | The prefix key of the node |
+| ordinal | The ordinal of the node (0-255) |
+| depth | The least-significant-byte of the depth of the node in the prefix tree (0 = empty key) |
+| value count | The number of entries stored in the tree under this node |
 
 ### Inserting
 
@@ -105,7 +105,6 @@ final node. The offset is used for probing in case of collisions.
 
 - Maximum number of elements on 64-bit system is is 2^56
 - NaNs are sorted as they were larger than any other value
-- 32-bit support is untested
 - How to sort std::any?
 - Unordered iteration is needed (e.g. for set union and intersection)
 
