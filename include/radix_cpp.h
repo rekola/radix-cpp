@@ -5,6 +5,7 @@
 #include <utility>
 #include <string>
 #include <stdexcept>
+#include <tuple>
 
 #ifdef DEBUG
 #include <iostream>
@@ -894,59 +895,69 @@ namespace radix_cpp {
       std::vector<value_type*> free_list_;
     };
 
-    size_t get_load_factor(size_t nodes_to_insert = 0) const noexcept { return 100 * (num_entries_ + nodes_to_insert) / table_size_; }
-    
+    size_t get_load_factor() const noexcept { return 100 * num_entries_ / table_size_; }
+    size_t get_inserts_until_rehash() const noexcept {
+      size_t max_entries = max_load_factor100 * table_size_ / 100;
+      if (num_entries_ > max_entries) return 0;
+      else return max_entries - num_entries_;
+    }
+
+    std::tuple<Node *, size_t, size_t, size_t> create_node(size_t depth, const internal_key_type & prefix_key, size_t ordinal) {
+      if (get_load_factor() >= max_load_factor100) {
+	resize(table_size_ * 2);
+      }
+
+      auto hash0 = calc_unordered_hash(depth, prefix_key);
+      auto hash = calc_final_hash(hash0, ordinal);
+      auto node_initial = read_node(hash);
+      auto nodes_start = get_nodes_start(), nodes_end = get_nodes_end();
+      
+      auto node = node_initial;
+      while ( 1 ) {
+	if (!node->is_assigned()) { // unassigned or tombstone
+	  node->assign(depth, prefix_key, ordinal);
+	  num_entries_++;
+	} else if (!node->equals(depth, prefix_key, ordinal)) {
+	  // collision
+	  if (++node == nodes_end) node = nodes_start;
+	  num_insert_collisions_++;
+	  continue;
+	} else {
+	  node->inc_value_count();
+	}
+	break;
+      }
+      return std::tuple(node, hash0, hash, static_cast<size_t>(node - node_initial));
+    }
+
     std::pair<Node *, iterator> create_nodes_for_key(key_type key0) {
       if (!nodes_) {
 	init(bucket_count);
       }
       auto n = keysize(key0);
       auto [ ordinal, prefix_key ] = deconstruct(std::move(key0));
-      // Make sure the hash has enough space for the whole key
-      while (get_load_factor(n) >= max_load_factor100) {
-	resize(table_size_ * 2);
-      }
+
       num_inserts_++;
 
       auto depth = n;
-      auto nodes_start = get_nodes_start(), nodes_end = get_nodes_end();
-      iterator it = end();
-      Node * final_node = nullptr;
+      
+      auto first_prefix_key = prefix_key;
+      auto first_ordinal = ordinal;
       	
-      // insert digits from least significant to most significant
-      // even if keysize is zero, add at least one digit (for empty strings)
-      for ( size_t i = 0; i < (n == 0 ? 1 : n); i++, depth-- ) {
-	auto hash0 = calc_unordered_hash(depth, prefix_key);
-	auto hash = calc_final_hash(hash0, ordinal);
-	auto node_initial = read_node(hash);
-	
-	auto node = node_initial;
-	while ( 1 ) {
-	  if (!node->is_assigned()) { // unassigned or tombstone
-	    node->assign(depth, prefix_key, ordinal);
-	    num_entries_++;
-	  } else if (!node->equals(depth, prefix_key, ordinal)) {
-	    // collision
-	    if (++node == nodes_end) node = nodes_start;
-	    num_insert_collisions_++;
-	    continue;
-	  } else {
-	    node->inc_value_count();
-	  }
-	  break;
-	}
-
-	if (!final_node) {
-	  final_node = node;
-	  it = iterator(this, node->get_payload(), depth, prefix_key, ordinal, static_cast<size_t>(node - node_initial), hash0, hash);
-	}
-
+      // first insert the tail from least significant digit to most significant
+      for ( size_t i = 1; i < n; i++) {
 	auto [ next_ordinal, next_prefix_key ] = deconstruct(std::move(prefix_key));
 	ordinal = next_ordinal;
 	prefix_key = std::move(next_prefix_key);
+	depth--;
+
+	create_node(depth, prefix_key, ordinal);
       }
-      
-      return std::pair(final_node, it);
+
+      // then insert the head
+      auto [ node, hash0, hash, offset ] = create_node(n, first_prefix_key, first_ordinal);
+      auto it = iterator(this, node->get_payload(), n, std::move(first_prefix_key), first_ordinal, offset, hash0, hash);
+      return std::pair(node, it);
     }
     // getFirstConst returns the key from value_type for either set or map
     // This version is for sets, where value_type == key_type

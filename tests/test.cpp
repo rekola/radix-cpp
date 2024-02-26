@@ -523,9 +523,13 @@ TEST_CASE( "subnormal numbers", "[subnormals]") {
   S.insert(std::numeric_limits<double>::min() / 2.0);
   S.insert(std::numeric_limits<double>::min() / -2.0);
   S.insert(0);
+  S.insert(-1);
+  S.insert(1);
   auto it = S.begin();
+  REQUIRE(*it++ == -1.0);
   REQUIRE(*it++ < 0.0);
   REQUIRE(*it++ == 0.0);
   REQUIRE(*it++ > 0.0);
+  REQUIRE(*it++ == 1.0);
   REQUIRE(it == S.end());
 }
