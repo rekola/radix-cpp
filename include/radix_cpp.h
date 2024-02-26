@@ -769,6 +769,7 @@ namespace radix_cpp {
       if (node->dec_value_count()) {
 	node->get_prefix_key().~internal_key_type();
 	num_entries_--;
+	inserts_remaining_++;
       }
       
       pos.down();
@@ -777,6 +778,7 @@ namespace radix_cpp {
 	if (node->dec_value_count()) {
 	  node->get_prefix_key().~internal_key_type();
 	  num_entries_--;
+	  inserts_remaining_++;
 	}
 	pos.down();
       }
@@ -903,7 +905,7 @@ namespace radix_cpp {
     }
 
     std::tuple<Node *, size_t, size_t, size_t> create_node(size_t depth, const internal_key_type & prefix_key, size_t ordinal) {
-      if (get_load_factor() >= max_load_factor100) {
+      if (!inserts_remaining_) {
 	resize(table_size_ * 2);
       }
 
@@ -917,6 +919,7 @@ namespace radix_cpp {
 	if (!node->is_assigned()) { // unassigned or tombstone
 	  node->assign(depth, prefix_key, ordinal);
 	  num_entries_++;
+	  inserts_remaining_--;
 	} else if (!node->equals(depth, prefix_key, ordinal)) {
 	  // collision
 	  if (++node == nodes_end) node = nodes_start;
@@ -986,7 +989,7 @@ namespace radix_cpp {
     // size must be a power of two
     void init(size_t s) {
       if (nodes_) std::free(nodes_);
-      table_size_ = s;
+      table_size_ = inserts_remaining_ = s;
       table_mask_ = s - 1;
       nodes_ = alloc_nodes(s);
     }
@@ -1032,6 +1035,7 @@ namespace radix_cpp {
       nodes_ = new_nodes;
       table_size_ = new_size;
       table_mask_ = new_mask;
+      inserts_remaining_ = get_inserts_until_rehash();
     }
 
     Node * read_node(size_t h, size_t offset) noexcept {return nodes_ + ((h + offset) & table_mask_); }
@@ -1061,6 +1065,7 @@ namespace radix_cpp {
     size_t num_entries_ = 0, num_final_entries_ = 0;
     size_t num_inserts_ = 0, num_insert_collisions_ = 0;
     size_t table_size_ = 0, table_mask_ = 0;
+    size_t inserts_remaining_ = 0;
     Node* nodes_ = nullptr;
     Arena arena_;
   };
